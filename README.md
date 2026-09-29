@@ -17,3 +17,4 @@ RSMA - набор инструментов, методов и алгоритмо
 
 - [Документация к проекту](https://github.com/GrimDarkTech/RSMADocs)
 - [Инструкция по установке](https://github.com/GrimDarkTech/RSMADocs/blob/main/Manual/ru/Installation/Installation.md)
+# Basozavr
