@@ -44,6 +44,15 @@ git clone https://github.com/antihype-k/basozavr.git
 Для `build.sh` нужен модуль Unity Hub «Linux Build Support (Mono)». Собрать можно и из редактора:
 меню **RSMA → Build SwarmDelivery (Linux)**.
 
+**Windows (PowerShell или cmd, из корня проекта):**
+```bat
+build.bat
+Builds\SwarmDeliveryWin\SwarmDelivery.exe
+```
+Либо из редактора: меню **RSMA → Build SwarmDelivery (Windows)**. Либо просто откройте `Assets/1.unity` в редакторе и нажмите Play.
+Установка: Git (с «Add to PATH»), Unity Hub и Unity 6000.3.16f1 (Windows Build Support ставится по умолчанию), Python 3.10+ («Add Python to PATH»),
+`pip install pyzmq numpy matplotlib`. Скрипты Python запускаются так же: `python Tools\SwarmCheck\swarm_check.py --drones 6`.
+
 **Из редактора:**
 1. Откройте `Assets/1.unity` и нажмите **Play**: рой сам выполнит всю миссию, в HUD слева сверху видны этап, расстояние до точки,
    высота и скорость груза, натяжение тросов, раскачка, путь, время и число рейсов.

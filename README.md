@@ -21,7 +21,7 @@ RSMA - набор инструментов, методов и алгоритмо
 
 ## БАСозавр: быстрый старт
 
-- Сборка (сцена 1): `./build.sh`, запуск: `./Builds/SwarmDelivery/SwarmDelivery.x86_64`
+- Сборка (сцена 1): Linux `./build.sh` → `./Builds/SwarmDelivery/SwarmDelivery.x86_64`; Windows `build.bat` → `Builds\SwarmDeliveryWin\SwarmDelivery.exe`
 - [Как запустить решение](docs/ONBOARDING.md)
 - [Аналитика и список на доработку](docs/ANALYTICS.md)
 - [Гайд по тестированию](docs/TEST_GUIDE.md)
