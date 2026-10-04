@@ -5,6 +5,9 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
+  - enabled: 1
+    path: Assets/1.unity
+    guid: a9b84b7fa04112448b421840f73e3456
   - enabled: 0
     path: Assets/Scenes/TestScenes/Agrobot.unity
     guid: b71f3dacff290a6469a12662dee4eab1

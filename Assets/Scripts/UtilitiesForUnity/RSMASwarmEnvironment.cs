@@ -46,6 +46,10 @@ public class RSMASwarmEnvironment : MonoBehaviour
     public bool startServer = true;
     public int serverPort = 5555;
 
+    [Header("Сборка")]
+    // Снять галочку, если сцену собирает внешний сценарий (например SwarmDeliveryScene)
+    public bool buildOnStart = true;
+
     [HideInInspector] public GameObject payloadInstance;
     [HideInInspector] public List<Quadrocopter> droneInstances = new List<Quadrocopter>();
     [HideInInspector] public List<RSMACable> cableInstances = new List<RSMACable>();
@@ -62,7 +66,7 @@ public class RSMASwarmEnvironment : MonoBehaviour
         // Повторный Run игнорируется, поэтому совместимо со сценами, где уже есть ServerApp
         if (startServer) NetMQServer.Run(serverPort);
 
-        BuildSwarmScene();
+        if (buildOnStart) BuildSwarmScene();
     }
 
     void Update()
