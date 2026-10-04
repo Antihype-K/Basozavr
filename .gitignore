@@ -46,3 +46,7 @@ UserSettings/Search.settings
 # Python
 __pycache__/
 *.pyc
+
+# Логи полёта Python-контроллера
+Python/logs/
+logs/

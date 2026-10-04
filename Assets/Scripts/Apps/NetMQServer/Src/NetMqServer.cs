@@ -24,7 +24,8 @@ namespace RSMA.NetMQ
         {
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
             NullValueHandling = NullValueHandling.Ignore,
-            ContractResolver = new CamelCasePropertyNamesContractResolver()
+            ContractResolver = new CamelCasePropertyNamesContractResolver(),
+            Converters = { new Vector3JsonConverter(), new QuaternionJsonConverter() }
         };
         public static bool IsRunning => _isRunning;
 

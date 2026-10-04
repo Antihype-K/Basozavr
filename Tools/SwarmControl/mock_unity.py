@@ -90,8 +90,10 @@ def main():
     ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--drones", type=int, default=6)
     ap.add_argument("--payload-mass", type=float, default=12.0)
+    ap.add_argument("--radius", type=float, default=3.0, help="радиус строя, м (сцена 1: 1.414)")
+    ap.add_argument("--cable", type=float, default=5.0, help="длина троса, м (сцена 1: 2)")
     args = ap.parse_args()
-    world = World(args.drones, args.payload_mass)
+    world = World(args.drones, args.payload_mass, radius=args.radius, cable=args.cable)
     threading.Thread(target=serve, args=(world, args.port), daemon=True).start()
     print(f"mock_unity на порту {args.port}: {args.drones} дронов, груз {args.payload_mass} кг (Ctrl+C — выход)")
     while True:

@@ -1,0 +1,4 @@
+pyzmq>=25
+numpy
+pandas
+matplotlib

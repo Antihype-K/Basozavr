@@ -45,16 +45,28 @@
 
 В ветре 10 ± 3 м/с: пик 10,2° → 6,0°, точность в точке 0,55 → 0,17 м.
 
+## Как запустить из этого репозитория
+
+Код перенесён в папку `Python/` вместе с исправлениями, клонировать GitLab не нужно:
+```bash
+./Builds/SwarmDelivery/SwarmDelivery.x86_64 -python     # сцена в режиме внешнего управления (в редакторе: externalControl у SwarmDeliveryScene)
+python Python/main.py
+python Python/visualize.py
+```
+Изменения относительно оригинала (`Python/UPSTREAM.txt`): исправлен `anti_sway.py`; `config.py` — точка доставки = оранжевая площадка
+сцены 1; `swarm_controller.py` — выход из цикла после посадки; `flight_state_machine.py` — посадка груза считается от высоты земли
+(в оригинале условие `payload_z ≤ 0,55` недостижимо: груз висит на 0,2 м выше уставки 0,5 м, фаза `LAND` не заканчивалась);
+`requirements.txt` — UTF-8. Проверено на имитаторе `Tools/SwarmControl/mock_unity.py` (кинематика): все фазы до `FINISHED`.
+В самой Unity не запускалось.
+
 ## Что сделать
 
-1. Применить патч к их репозиторию: `Tools/SwarmControl/gitlab-patches/anti_sway_fix.patch`
+1. Если нужен их GitLab, а не этот репозиторий, применить патч: `Tools/SwarmControl/gitlab-patches/anti_sway_fix.patch`
    (`git apply` из корня их репозитория). Он передаёт в `compute_sway_correction` номинальное смещение дрона (`self.offsets[d_id]`)
    и убирает выброс на первом шаге. Менять K и D не нужно.
-2. Для Python-миссии поставить ПИД префаба `Assets/Prefabs/Drones/Quadrocopter.prefab` 10 / 2 / 12 (`positionKp/Ki/Kd`).
-   C#-миссия сцены 1 переопределяет ПИД на 40/12/14 в `SwarmDeliveryScene`, поэтому ей это не мешает.
+2. ПИД 10 / 2 / 12 для Python-режима `SwarmDeliveryScene` ставит сама (`externalKp/Ki/Kd`); встроенная миссия использует 40/12/14.
 3. Мелочи в их README: после `git clone` указан `cd RSMASwarmDelivery` (папка называется `rsma-swarm-delivery-system`), упомянуты
    подмодули, которых нет (`.gitmodules` отсутствует), связь названа UDP, хотя это TCP/ZeroMQ, `python main.py` надо запускать из `Source/`,
    `requirements.txt` в UTF-16.
 
-Проверка в Unity: запустить их `main.py` на сцене без встроенной миссии (на объекте `SwarmDelivery` отключить `SwarmDeliveryScene`,
-у `RSMASwarmEnvironment` включить `buildOnStart`) и сравнить пик раскачки в `visualize.py` с таблицей.
+Проверка в Unity: запустить `python Python/main.py` при `-python` и сравнить пик раскачки в `visualize.py` с таблицей.

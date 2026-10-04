@@ -65,9 +65,19 @@ Builds\SwarmDeliveryWin\SwarmDelivery.exe
    python swarm_check.py --drones 6 --duration 60 --csv flight.csv   # запись 60 с
    ```
    `[OK] OK: Server is running` — связь есть. Таймаут — сцена не запущена или у менеджера роя выключен `startServer`.
-4. **Только если нужна Python-миссия вместо встроенной:** на объекте `SwarmDelivery` отключите компонент `SwarmDeliveryScene`
-   и включите `buildOnStart` у `RSMASwarmEnvironment` (иначе встроенный полёт и Python будут задавать цели дронам одновременно).
-   Затем:
+4. **Python-контроллер команды** (папка `Python/`, перенесена из GitLab `rsma-swarm-delivery-system`): запустите сцену в режиме
+   внешнего управления. В собранной игре это ключ `-python`, в редакторе включите `externalControl` у `SwarmDeliveryScene`:
+   ```bash
+   ./Builds/SwarmDelivery/SwarmDelivery.x86_64 -python    # Windows: Builds\SwarmDeliveryWin\SwarmDelivery.exe -python
+   pip install -r Python/requirements.txt                 # один раз
+   python Python/main.py                                  # миссия: подъём, перенос на оранжевую площадку, посадка груза и дронов
+   python Python/visualize.py                             # графики последнего полёта (из logs/)
+   ```
+   Встроенная миссия в этом режиме отключена, дроны держат позицию до первой команды Python. Параметры миссии — `Python/config.py`
+   (`TARGET_OFFSET_X/Y` — смещение от базы до точки доставки, `CRUISE_ALTITUDE`, `V_MAX`, `K_SWAY/D_SWAY`).
+   Подробности и найденные проблемы: `docs/PYTHON_CONTROLLER_REVIEW.md`.
+
+   Другой Python-вариант, `mission.py` (простой контроллер из `Tools/SwarmControl`):
    ```bash
    python Tools/SwarmControl/mission.py --drones 6 --payload-mass 19.8 --dropoff <X> <Z> --log mission.csv
    ```

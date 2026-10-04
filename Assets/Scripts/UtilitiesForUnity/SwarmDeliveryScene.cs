@@ -41,6 +41,15 @@ public class SwarmDeliveryScene : MonoBehaviour
     public float positionKi = 12.0f;
     public float positionKd = 14.0f;
 
+    [Header("Внешнее управление (Python)")]
+    // Рой собирается, но встроенная миссия не запускается: цели дронам задаёт Python-контроллер (папка Python/).
+    // В сборке включается ключом командной строки: SwarmDelivery.x86_64 -python
+    public bool externalControl = false;
+    // ПИД под медленный полёт Python-контроллера (подобрано на модели Tools/SwarmModel)
+    public float externalKp = 10.0f;
+    public float externalKi = 2.0f;
+    public float externalKd = 12.0f;
+
     [Header("Камера и HUD")]
     public bool followCamera = true;
     public bool showHud = true;
@@ -56,6 +65,7 @@ public class SwarmDeliveryScene : MonoBehaviour
     void Awake()
     {
         environment = GetComponent<RSMASwarmEnvironment>();
+        if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-python") >= 0) externalControl = true;
         // Рой собираем сами — после того, как точки привязаны к рельефу
         environment.buildOnStart = false;
     }
@@ -79,7 +89,19 @@ public class SwarmDeliveryScene : MonoBehaviour
         environment.BuildSwarmScene();
 
         TuneDrones();
-        SetUpFlight();
+        if (externalControl)
+        {
+            Debug.Log("[SwarmDelivery] Внешнее управление: встроенная миссия отключена, ждём Python-контроллер (порт 5555).");
+            // Пока нет команд, дроны держат стартовую позицию (без команды Quadrocopter не создаёт тягу)
+            foreach (Quadrocopter d in environment.droneInstances)
+            {
+                if (d != null) d.SetTargetPosition(d.transform.position);
+            }
+        }
+        else
+        {
+            SetUpFlight();
+        }
         SetUpCamera();
     }
 
@@ -89,9 +111,9 @@ public class SwarmDeliveryScene : MonoBehaviour
         foreach (Quadrocopter d in environment.droneInstances)
         {
             if (d == null) continue;
-            d.positionKp = positionKp;
-            d.positionKi = positionKi;
-            d.positionKd = positionKd;
+            d.positionKp = externalControl ? externalKp : positionKp;
+            d.positionKi = externalControl ? externalKi : positionKi;
+            d.positionKd = externalControl ? externalKd : positionKd;
         }
     }
 
@@ -195,7 +217,16 @@ public class SwarmDeliveryScene : MonoBehaviour
 
     void Update()
     {
-        if (cameraFocus == null || flight == null) return;
+        if (cameraFocus == null) return;
+
+        if (externalControl)
+        {
+            // Без встроенной миссии камера следит за грузом
+            if (environment.payloadInstance != null) cameraFocus.position = environment.payloadInstance.transform.position;
+            return;
+        }
+
+        if (flight == null) return;
 
         // Update идёт до LateUpdate камеры, поэтому кадр не дёргается
         if (flight.PayloadAttached && flight.payload != null)
@@ -218,6 +249,7 @@ public class SwarmDeliveryScene : MonoBehaviour
 
     void OnGUI()
     {
+        if (showHud && externalControl) DrawExternalHud();
         if (!showHud || flight == null) return;
 
         float cargo = flight.payload != null ? flight.payload.mass : 0.0f;
@@ -239,6 +271,23 @@ public class SwarmDeliveryScene : MonoBehaviour
             flight.PayloadAttached ? $"Раскачка груза: {flight.SwingAngle:0.0}°" : "Раскачка груза: —");
         GUI.Label(new Rect(22, 142, 340, 20),
             $"Путь: {flight.TraveledDistance:0.0} м   Время: {flight.MissionTime:0.0} с   Рейсов: {flight.LapsDone}");
+    }
+
+    private void DrawExternalHud()
+    {
+        Rigidbody payload = environment.payloadInstance != null ? environment.payloadInstance.GetComponent<Rigidbody>() : null;
+        float total = 0.0f;
+        foreach (RSMACable c in environment.cableInstances)
+        {
+            if (c != null) total += c.currentForce;
+        }
+
+        GUI.Box(new Rect(10, 10, 360, 90), "БАСозавр — управление из Python");
+        GUI.Label(new Rect(22, 34, 340, 20), $"Рой: {environment.droneInstances.Count} БПЛА   Груз: {environment.payloadMass:0.0} кг");
+        GUI.Label(new Rect(22, 52, 340, 20), payload != null
+            ? $"Груз: высота {payload.position.y:0.0} м   скорость {payload.linearVelocity.magnitude:0.0} м/с"
+            : "Груз: —");
+        GUI.Label(new Rect(22, 70, 340, 20), $"Суммарное натяжение тросов: {total:0} Н");
     }
 
     void OnDrawGizmos()
