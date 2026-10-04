@@ -115,7 +115,7 @@ NetMQ `RouterSocket` на порту **5555** (`Assets/Scripts/Apps/NetMQServer/
 | `maxForce` | предел силы дрона, Н (тяга): P₁ = 3,3 кг + запас 25 % | 71 |
 | `maxIntegralForce` | ограничение интегральной составляющей, Н | 250 |
 | `smoothTarget` | вести цель с ограничением скорости и ускорения (меньше раскачка) | выкл. |
-| `maxSpeed` / `maxAcceleration` | ограничения для `smoothTarget`, м/с и м/с² | 3 / 0,5 |
+| `maxSpeed` / `maxAcceleration` | ограничения для `smoothTarget`, м/с и м/с² | 3 / 0,3 |
 | `droneMass`, `linearDrag`, `angularDrag` | масса и сопротивление | 2,5 / 0,8 / 3 |
 | `isFailed` | имитация отказа дрона | выкл. |
 

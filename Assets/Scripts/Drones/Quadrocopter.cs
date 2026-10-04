@@ -24,7 +24,7 @@ public class Quadrocopter : MonoBehaviour
     [Header("Сглаживание цели")]
     [Tooltip("Вести цель к точке Python с ограничением скорости (maxSpeed) и ускорения (maxAcceleration): меньше раскачка груза")]
     public bool smoothTarget = false;
-    public float maxAcceleration = 0.5f;
+    public float maxAcceleration = 0.3f;
 
     [Header("Отказ")]
     [Tooltip("Имитация отказа: дрон перестает создавать тягу (для проверки отказоустойчивости)")]

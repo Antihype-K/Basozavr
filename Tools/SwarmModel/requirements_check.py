@@ -16,11 +16,12 @@ P1, MD = 3.3, 2.5
 
 def flight(**kw):
     a, p = run(kw)
-    t = a['t']; cruise = (t > 25) & (t < 40); end = t > p['T'] - 10
+    t = a['t']; move = (t > 12) & (t < p['T'] - 10); end = t > p['T'] - 10
     err = np.hypot(a['px'][end] - p['D'], a['pz'][end])
     return dict(lifted=a['py'][end].mean() > p['H'] - p['L'] - 1.5, err_mean=err.mean(), err_max=err.max(),
-                swing=a['swing'][cruise].max(), swing_end=a['swing'][end].max(),
-                uneven=np.mean((a['tmax'][cruise] - a['tmin'][cruise]) / np.maximum(a['tmean'][cruise], 1e-6)) * 100)
+                swing=a['swing'][move].max(), swing_end=a['swing'][end].max(),
+                uneven=np.mean((a['tmax'][move] - a['tmin'][move]) / np.maximum(a['tmean'][move], 1e-6)) * 100,
+                uneven_hover=np.mean((a['tmax'][end] - a['tmin'][end]) / np.maximum(a['tmean'][end], 1e-6)) * 100)
 
 
 def max_payload(n, fmax):
@@ -46,8 +47,9 @@ def main():
                      "да" if r['lifted'] else "НЕТ", r['lifted']))
         rows.append((f"{n} БПЛА: точность в точке, без ветра", "м (сред/макс)",
                      f"{r['err_mean']:.2f}/{r['err_max']:.2f}", True))
-        rows.append((f"{n} БПЛА: неравномерность натяжений", "%", f"{r['uneven']:.0f}", True))
-        rows.append((f"{n} БПЛА: раскачка в крейсере / на зависании", "°", f"{r['swing']:.1f} / {r['swing_end']:.1f}", True))
+        rows.append((f"{n} БПЛА: неравномерность натяжений в движении / на зависании", "%",
+                     f"{r['uneven']:.0f} / {r['uneven_hover']:.0f}", r['uneven'] <= 20 and r['uneven_hover'] <= 5))
+        rows.append((f"{n} БПЛА: пик раскачки в движении / на зависании", "°", f"{r['swing']:.1f} / {r['swing_end']:.1f}", True))
         lim = max_payload(n, F)
         rows.append((f"{n} БПЛА: предельный груз", "кг", f"{lim:.0f} (запас {100 * (lim / (n * P1) - 1):.0f} %)",
                      lim >= n * P1 * 1.15))

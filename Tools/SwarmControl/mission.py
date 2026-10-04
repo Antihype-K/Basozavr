@@ -27,15 +27,34 @@ G = 9.81
 
 
 class Setpoint:
-    """Общая цель строя: ведётся к точке с ограничением скорости, ускорения и торможением перед точкой."""
+    """
+    Общая цель строя: ведётся к точке с ограничением скорости и ускорения и торможением перед точкой.
 
-    def __init__(self, position, vmax, amax):
+    Поверх траектории — формирователь входа ZVD (input shaper): команда подаётся тремя импульсами
+    (1/4, 1/2, 1/4) с шагом в полпериода колебаний груза, и колебания после разгона/торможения гасят друг друга.
+    Период груза на модели ~5,5 с; формирователь устойчив к ошибке периода около ±1 с.
+    p — то, что отправляется дронам (после формирователя), raw — траектория до него.
+    """
+
+    def __init__(self, position, vmax, amax, shaper_period=0.0, dt=0.05):
+        self.raw = list(position)
         self.p = list(position)
         self.v = [0.0, 0.0, 0.0]
         self.vmax, self.amax = vmax, amax
+        half = int(round(shaper_period / 2.0 / dt)) if shaper_period > 0 else 0
+        self.taps = [(0.25, 0), (0.5, half), (0.25, 2 * half)] if half else [(1.0, 0)]
+        self.hist = []
+
+    def fast_mode(self, vmax, amax):
+        """Без груза формирователь не нужен: продолжаем с текущего выхода без скачка цели, с большим ускорением."""
+        self.raw = list(self.p)
+        self.v = [0.0, 0.0, 0.0]
+        self.hist = [list(self.raw)]
+        self.taps = [(1.0, 0)]
+        self.vmax, self.amax = vmax, amax
 
     def step(self, goal, dt):
-        d = [goal[k] - self.p[k] for k in range(3)]
+        d = [goal[k] - self.raw[k] for k in range(3)]
         dist = math.sqrt(sum(c * c for c in d))
         limit = min(self.vmax, math.sqrt(2.0 * self.amax * dist))
         want = [c / dist * limit for c in d] if dist > 1e-6 else [0.0, 0.0, 0.0]
@@ -46,10 +65,12 @@ class Setpoint:
         self.v = [self.v[k] + dv[k] for k in range(3)]
         move = [c * dt for c in self.v]
         if math.sqrt(sum(c * c for c in move)) >= dist:
-            self.p, self.v = list(goal), [0.0, 0.0, 0.0]
+            self.raw, self.v = list(goal), [0.0, 0.0, 0.0]
         else:
-            self.p = [self.p[k] + move[k] for k in range(3)]
-        return dist
+            self.raw = [self.raw[k] + move[k] for k in range(3)]
+        self.hist.append(list(self.raw))
+        self.p = [sum(w * self.hist[max(0, len(self.hist) - 1 - delay)][k] for w, delay in self.taps) for k in range(3)]
+        return math.sqrt(sum((goal[k] - self.p[k]) ** 2 for k in range(3)))  # расстояние от выхода формирователя до цели
 
 
 class Mission:
@@ -61,6 +82,10 @@ class Mission:
         self.t0 = time.time()
         self.released = False
         self.eq = {i: 0.0 for i in self.ids}  # поправка высоты при выравнивании натяжений
+        # ускорение: либо задано явно, либо из допустимой раскачки (модель: пик раскачки ~ 12.5 °·с²/м × ускорение)
+        self.accel = args.accel if args.max_swing is None else max(0.1, min(1.0, args.max_swing / 12.5))
+        if args.max_swing is not None and args.no_shaper:
+            self.accel = max(0.1, min(1.0, args.max_swing / 18.0))  # без формирователя пик выше ~ 18 °·с²/м
 
     # --- обмен с Unity -------------------------------------------------
     def drone_pos(self, i):
@@ -96,7 +121,7 @@ class Mission:
         cx = sum(p[0] for p in start.values()) / len(start)
         cz = sum(p[2] for p in start.values()) / len(start)
         cy = sum(p[1] for p in start.values()) / len(start)
-        sp = Setpoint((cx, cy, cz), a.speed, a.accel)
+        sp = Setpoint((cx, cy, cz), a.speed, self.accel, 0.0 if a.no_shaper else a.shaper_period, 1.0 / a.rate)
         weight = a.payload_mass * G
         dt = 1.0 / a.rate
         print(f"Старт: центр строя ({cx:.1f}, {cy:.1f}, {cz:.1f}), груз ({pay0[0]:.1f}, {pay0[1]:.1f}, {pay0[2]:.1f})")
@@ -116,6 +141,7 @@ class Mission:
             t_stage = time.time()
             if name == "Отцепка":
                 self.release_cables()
+                sp.fast_mode(a.speed, 1.0)
                 time.sleep(0.5)
                 continue
             while True:
@@ -139,8 +165,8 @@ class Mission:
 
     def lowering_goal(self):
         # опускаем строй до касания; затем ещё немного, пока тросы не ослабнут
-        x, y, z = self._sp.p
-        return (x, y - 1.0, z)
+        x, y, z = self._sp.raw
+        return (x, max(self._cy, y - 1.0), z)  # не ниже стартовой высоты дронов
 
     def lowering_done(self, dist, sp):
         pay = self.payload()
@@ -197,7 +223,11 @@ def main():
     ap.add_argument("--dropoff", type=float, nargs=2, metavar=("X", "Z"), required=True, help="точка выгрузки")
     ap.add_argument("--height", type=float, default=13.0, help="высота дронов при переносе, м")
     ap.add_argument("--speed", type=float, default=4.6, help="макс. скорость, м/с")
-    ap.add_argument("--accel", type=float, default=0.5, help="макс. ускорение, м/с²")
+    ap.add_argument("--accel", type=float, default=0.3, help="макс. ускорение, м/с² (меньше — меньше раскачка, дольше полёт)")
+    ap.add_argument("--max-swing", type=float, default=None, metavar="DEG",
+                    help="допустимая пиковая раскачка груза, градусы: ускорение подбирается по модели (заменяет --accel)")
+    ap.add_argument("--shaper-period", type=float, default=5.5, help="период колебаний груза для формирователя, с")
+    ap.add_argument("--no-shaper", action="store_true", help="отключить формирователь входа")
     ap.add_argument("--rate", type=float, default=20.0, help="частота команд, Гц")
     ap.add_argument("--slack-fraction", type=float, default=0.15, help="отцепка, когда суммарное натяжение < доли веса груза")
     ap.add_argument("--tolerance", type=float, default=0.25, help="допуск по положению груза в точке выгрузки, м")

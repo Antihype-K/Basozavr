@@ -12,9 +12,9 @@ def cm(v, m):
 
 def run(P):
     p = dict(n=6, M=12.0, radius=3.0, L=5.0, md=2.5, Fmax=250.0, kp=10, ki=2, kd=12, Imax=250.0,
-             vmax=4.6, amax=0.5, smooth=True, wind=0.0, gust=0.0, wind_dir=(0, 0, 1),
+             vmax=4.6, amax=0.3, smooth=True, wind=0.0, gust=0.0, wind_dir=(0, 0, 1),
              cdA_drone=0.1, cdA_load=0.17, eq=False, eq_gain=0.02, eq_lim=1.5,
-             fail_id=None, fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
+             fail_id=None, shaper='zvd', shaper_T=5.5,  fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
     p.update(P); n = p['n']; rng = np.random.default_rng(p['seed'])
     ang = np.arange(n)*2*np.pi/n + (np.pi/4 if n == 4 else 0)
     off = np.stack([p['radius']*np.cos(ang), np.zeros(n), p['radius']*np.sin(ang)], 1)
@@ -23,7 +23,7 @@ def run(P):
     sp = dp.mean(0).copy(); spv = np.zeros(3); hoff = np.zeros(n)
     wdir = np.array(p['wind_dir'], float); wdir /= np.linalg.norm(wdir)
     gust_phase = rng.uniform(0, 6.28, 3)
-    log = []
+    log = []; hist = []
     for kk in range(int(p['T']/DT)):
         t = kk*DT
         goal = np.array([0, p['H'], 0]) if t < 12 else np.array([p['D'], p['H'], 0])
@@ -35,13 +35,19 @@ def run(P):
             spv = spv + cm(vd - spv, p['amax']*DT); st = spv*DT
             sp = goal.copy() if np.linalg.norm(st) >= dist else sp + st
         else: sp = goal
+        hist.append(sp.copy())
+        spc = sp
+        if p['shaper'] != 'none':   # формирователь входа: импульсы с шагом T/2 гасят колебания маятника
+            half = int(round(p['shaper_T']/2/DT))
+            taps = [(0.5, 0), (0.5, half)] if p['shaper'] == 'zv' else [(0.25, 0), (0.5, half), (0.25, 2*half)]
+            spc = sum(w*hist[max(0, len(hist)-1-d)] for w, d in taps)
         # ветер с порывами (сумма синусоид)
         g = p['gust']*(0.6*np.sin(0.9*t+gust_phase[0]) + 0.3*np.sin(2.3*t+gust_phase[1]) + 0.1*np.sin(5.1*t+gust_phase[2]))
         W = wdir*(p['wind'] + g)
         F = np.zeros((n, 3)); Fp = np.zeros(3); ten = np.zeros(n)
         alive = np.array([not (p['fail_id'] == i and t >= p['fail_t']) for i in range(n)])
         for i in range(n):
-            tgt = sp + off[i] + [0, hoff[i], 0]
+            tgt = spc + off[i] + [0, hoff[i], 0]
             if alive[i]:
                 e = tgt - dp[i]; I[i] += e*DT; I[i] = cm(I[i]*p['ki'], p['Imax'])/p['ki']
                 f = p['kp']*e + p['ki']*I[i] - p['kd']*dv[i] - G*p['md']
@@ -68,7 +74,7 @@ def run(P):
         cen = dp[alive].mean(0); r = cen - pp
         sw = np.degrees(np.arccos(np.clip(r[1]/np.linalg.norm(r), -1, 1)))
         lt = ten[alive]
-        log.append(dict(t=t, px=pp[0], py=pp[1], pz=pp[2], v=np.linalg.norm(pv), sum=ten.sum(),
+        log.append(dict(t=t, offx=r[0], offz=r[2], cx=cen[0], px=pp[0], py=pp[1], pz=pp[2], v=np.linalg.norm(pv), sum=ten.sum(),
                         tmin=lt.min(), tmax=lt.max(), tmean=lt.mean(), swing=sw,
                         ang=np.degrees(np.arccos(np.clip(np.mean([(dp[i,1]-pp[1])/max(np.linalg.norm(dp[i]-pp),1e-6) for i in range(n) if alive[i]]),-1,1)))))
     return {k: np.array([r[k] for r in log]) for k in log[0]}, p
