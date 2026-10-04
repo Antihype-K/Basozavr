@@ -18,3 +18,9 @@ RSMA - набор инструментов, методов и алгоритмо
 - [Документация к проекту](https://github.com/GrimDarkTech/RSMADocs)
 - [Инструкция по установке](https://github.com/GrimDarkTech/RSMADocs/blob/main/Manual/ru/Installation/Installation.md)
 # Basozavr
+
+## БАСозавр: быстрый старт
+
+- [Как запустить решение](docs/ONBOARDING.md)
+- [Аналитика и список на доработку](docs/ANALYTICS.md)
+- Проверка связи с Python: `Tools/SwarmCheck/swarm_check.py`
