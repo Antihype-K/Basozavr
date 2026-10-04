@@ -23,4 +23,5 @@ RSMA - набор инструментов, методов и алгоритмо
 
 - [Как запустить решение](docs/ONBOARDING.md)
 - [Аналитика и список на доработку](docs/ANALYTICS.md)
-- Проверка связи с Python: `Tools/SwarmCheck/swarm_check.py`
+- [Гайд по тестированию](docs/TEST_GUIDE.md)
+- Проверка связи с Python: `Tools/SwarmCheck/swarm_check.py`, ступенчатый тест роя: `Tools/SwarmCheck/step_test.py`
