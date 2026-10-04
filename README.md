@@ -21,6 +21,7 @@ RSMA - набор инструментов, методов и алгоритмо
 
 ## БАСозавр: быстрый старт
 
+- Запуск из корня проекта: `./run.sh` (Linux/macOS) или `run.bat` (Windows) — откроет Unity, сцену SupremeFlat и Play Mode; другая сцена: `./run.sh Assets/1.unity`
 - [Как запустить решение](docs/ONBOARDING.md)
 - [Аналитика и список на доработку](docs/ANALYTICS.md)
 - [Гайд по тестированию](docs/TEST_GUIDE.md)
