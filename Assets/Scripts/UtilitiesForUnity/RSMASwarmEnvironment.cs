@@ -1,3 +1,4 @@
+using RSMA.NetMQ;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,13 +16,27 @@ public class RSMASwarmEnvironment : MonoBehaviour
     public float radius = 1.414f;
     public float cableLength = 2.0f;
 
+    [Header("Связь с Python")]
+    [Tooltip("Запустить NetMQ-сервер для Python, если на сцене нет ServerApp")]
+    public bool startServer = true;
+    public int serverPort = 5555;
+
     [HideInInspector] public GameObject payloadInstance;
     [HideInInspector] public List<Quadrocopter> droneInstances = new List<Quadrocopter>();
     [HideInInspector] public List<RSMACable> cableInstances = new List<RSMACable>();
 
     void Start()
     {
+        // Повторный Run игнорируется, поэтому совместимо со сценами, где уже есть ServerApp
+        if (startServer) NetMQServer.Run(serverPort);
+
         BuildSwarmScene();
+    }
+
+    void Update()
+    {
+        // Выполняет команды Python (RestartLevel и т.п.) в главном потоке Unity
+        if (startServer) NetMQServer.Update();
     }
 
     public void BuildSwarmScene()

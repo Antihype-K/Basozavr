@@ -31,12 +31,21 @@ git clone https://github.com/antihype-k/basozavr.git
 
 | Сцена | Что там | Состояние |
 |---|---|---|
-| `Assets/1.unity` | **новая сцена**: новые модели `Gyrocopt` (дрон) и `Gruz` (груз), три менеджера роя (6 дронов/12 кг, 5/10, 4/8) | NetMQ-сервера (`ServerApp`) нет: Python не подключится, см. `ANALYTICS.md`, п. 1 |
-| `Assets/Scenes/SupremeFlat.unity` | старая рабочая сцена: префабы `Prefabs/Drones/Quadrocopter` + `Payload`, 6 дронов/12 кг, сервер есть | для проверки связки Unity ↔ Python |
+| `Assets/1.unity` | **рабочая сцена**: новые модели `Gyrocopt` (дрон) и `Gruz` (груз). Активен рой `RSMAEnvironment 6` (6 дронов / 12 кг), рои на 5 и 4 дрона выключены | NetMQ-сервер поднимает сам менеджер роя (`startServer`, порт 5555) |
+| `Assets/Scenes/SupremeFlat.unity` | старая сцена: префабы `Prefabs/Drones/Quadrocopter` + `Payload` | для сравнения |
 
 ## 4. Запуск
 
-1. Откройте сцену и нажмите **Play**.
+**Одной командой (сборка, Linux):**
+```bash
+./build.sh                                   # один раз и после изменений; редактор с проектом должен быть закрыт
+./Builds/SwarmDelivery/SwarmDelivery.x86_64  # запуск
+```
+Для `build.sh` нужен модуль Unity Hub «Linux Build Support (Mono)». Собрать можно и из редактора:
+меню **RSMA → Build SwarmDelivery (Linux)**.
+
+**Из редактора:**
+1. Откройте `Assets/1.unity` и нажмите **Play**.
 2. В Console должно появиться `[RSMA Engine] Сцена успешно собрана: N дронов, груз M кг.`
 3. Проверьте связь с Python (Unity в Play Mode):
    ```bash
@@ -45,7 +54,7 @@ git clone https://github.com/antihype-k/basozavr.git
    python swarm_check.py --drones 6                    # одна проверка
    python swarm_check.py --drones 6 --duration 60 --csv flight.csv   # запись 60 с
    ```
-   `[OK] OK: Server is running` — связь есть. Таймаут — на сцене нет `ServerApp` или Unity не в Play Mode.
+   `[OK] OK: Server is running` — связь есть. Таймаут — сцена не запущена или у менеджера роя выключен `startServer`.
 4. Запустите Python-управление роем (отдельный код команды). Он подключается к `tcp://localhost:5555`
    и задаёт целевые точки дронов через топики `DroneTargetPose_<id>`.
 5. После полета запустите файл визуализации из Python-кода. Он строит графики и считает характеристики полета.
