@@ -12,10 +12,13 @@ import numpy as np
 from swarm_model import run
 
 P1, MD = 3.3, 2.5
+# геометрия и регулятор сцены Assets/1.unity (SwarmDeliveryScene): трос 2 м, радиус 1,414 м, ПИД 40/12/14, плечо 56,6 м
+SCENE1 = dict(radius=1.414, L=2.0, kp=40, ki=12, kd=14, H=13.45, D=56.6, T=90, vmax=4.0, amax=0.5, shaper='none')
+BASE = {}
 
 
 def flight(**kw):
-    a, p = run(kw)
+    a, p = run(dict(BASE, **kw))
     t = a['t']; move = (t > 12) & (t < p['T'] - 10); end = t > p['T'] - 10
     err = np.hypot(a['px'][end] - p['D'], a['pz'][end])
     return dict(lifted=a['py'][end].mean() > p['H'] - p['L'] - 1.5, err_mean=err.mean(), err_max=err.max(),
@@ -27,7 +30,7 @@ def flight(**kw):
 def max_payload(n, fmax):
     m = n * P1
     while True:
-        a, p = run(dict(n=n, M=m + 1, Fmax=fmax, T=50, D=30)); end = a['t'] > 42
+        a, p = run(dict(BASE, n=n, M=m + 1, Fmax=fmax, T=50, D=30)); end = a['t'] > 42
         if not (a['py'][end].mean() > p['H'] - p['L'] - 1.0 and np.hypot(a['px'][end] - p['D'], a['pz'][end]).max() < 0.5):
             return m + 0.5
         m += 1
@@ -36,8 +39,13 @@ def max_payload(n, fmax):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fmax", type=float, default=71.0, help="предельная сила дрона maxForce, Н")
+    ap.add_argument("--preset", choices=["reference", "scene1"], default="reference",
+                    help="reference: трос 5 м, радиус 3 м; scene1: геометрия и ПИД сцены Assets/1.unity")
     args = ap.parse_args()
+    if args.preset == "scene1":
+        BASE.update(SCENE1)
     F = args.fmax
+    print(f"Пресет: {args.preset}")
     print(f"Дрон {MD} кг, maxForce {F} Н: тяговооруженность {F / (MD * 9.81):.2f}, "
           f"запас тяги сверх P1={P1} кг: {100 * (F / ((MD + P1) * 9.81) - 1):.0f} %\n")
     rows = []

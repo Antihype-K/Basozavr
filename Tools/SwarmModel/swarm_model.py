@@ -14,7 +14,7 @@ def run(P):
     p = dict(n=6, M=12.0, radius=3.0, L=5.0, md=2.5, Fmax=250.0, kp=10, ki=2, kd=12, Imax=250.0,
              vmax=4.6, amax=0.3, smooth=True, wind=0.0, gust=0.0, wind_dir=(0, 0, 1),
              cdA_drone=0.1, cdA_load=0.17, eq=False, eq_gain=0.02, eq_lim=1.5,
-             fail_id=None, shaper='zvd', shaper_T=5.5,  fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
+             fail_id=None, shaper='zvd', shaper_T=5.5, shift_k=0.0, shift_lim=1.0,  fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
     p.update(P); n = p['n']; rng = np.random.default_rng(p['seed'])
     ang = np.arange(n)*2*np.pi/n + (np.pi/4 if n == 4 else 0)
     off = np.stack([p['radius']*np.cos(ang), np.zeros(n), p['radius']*np.sin(ang)], 1)
@@ -46,8 +46,10 @@ def run(P):
         W = wdir*(p['wind'] + g)
         F = np.zeros((n, 3)); Fp = np.zeros(3); ten = np.zeros(n)
         alive = np.array([not (p['fail_id'] == i and t >= p['fail_t']) for i in range(n)])
+        # как в SwarmScriptedFlight.swingDamping: строй сдвигается по горизонтальной скорости груза
+        shift = cm(p['shift_k']*pv*[1, 0, 1], p['shift_lim']) if p['shift_k'] > 0 else np.zeros(3)
         for i in range(n):
-            tgt = spc + off[i] + [0, hoff[i], 0]
+            tgt = spc + off[i] + [0, hoff[i], 0] + shift
             if alive[i]:
                 e = tgt - dp[i]; I[i] += e*DT; I[i] = cm(I[i]*p['ki'], p['Imax'])/p['ki']
                 f = p['kp']*e + p['ki']*I[i] - p['kd']*dv[i] - G*p['md']

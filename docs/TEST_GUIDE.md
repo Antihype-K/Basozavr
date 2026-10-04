@@ -86,8 +86,8 @@
 | Ошибки | нет `NullReferenceException` (частая причина: в префабе дрона не назначены `propeller1..4`) |
 | Без команд | до первой команды Python дроны не управляются: стоят или опускаются под гравитацией |
 
-> На `1.unity` активен один рой (`RSMAEnvironment 6`). Если включаете рои на 5 или 4 дрона,
-> выключите остальные: номера дронов и топики у роёв совпадают (проблема №2 из ANALYTICS.md).
+> На `1.unity` рой собирает объект `SwarmDelivery` (`SwarmDeliveryScene`): 6 БПЛА, груз 12 кг, трос 2 м. Для другого числа дронов
+> или массы груза меняйте `numDrones` и `payloadMass` у `RSMASwarmEnvironment` на этом же объекте.
 
 ---
 
@@ -190,6 +190,11 @@ python swarm_check.py --drones 6 --duration 10 --rate 10 --csv results/t3_idle.c
 
 ## T5. Полная миссия доставки
 
+> **Встроенная миссия сцены 1.** Нажмите Play на `Assets/1.unity`: рой пройдёт весь цикл сам, все значения из чек-листа ниже
+> читаются с HUD (этап, расстояние до точки, высота и скорость груза, натяжение тросов, раскачка, путь, время, рейсы).
+> Параметры миссии — на объекте `SwarmDelivery` (`SwarmDeliveryScene`). Запуск `mission.py` ниже нужен только для Python-варианта
+> (см. ONBOARDING.md, п. 4.4).
+
 Запуск: `python Tools/SwarmControl/mission.py --drones 6 --payload-mass 19.8 --dropoff <X> <Z> --log results/t5.csv`
 (`--equalize` включает выравнивание натяжений). Сценарий эталона: взлёт с площадки (синий круг) → перенос груза →
 выгрузка в оранжевом круге → отцепка тросов → возврат → посадка.
@@ -263,7 +268,7 @@ python swarm_check.py --drones 6 --duration 10 --rate 10 --csv results/t3_idle.c
 
 **Ориентир (модель, `maxForce` = 71 Н):** 4 БПЛА держат до 17 кг, 6 БПЛА — до 25 кг.
 **Требование:** 4 БПЛА поднимают 13,2 кг (400 %), 6 БПЛА — 19,8 кг (600 %), запас ≥ 15 %.
-Для 4 БПЛА выключите `RSMAEnvironment 6`, включите `RSMAEnvironment 4` и задайте `payloadMass`.
+Для 4 БПЛА задайте `numDrones` = 4 и `payloadMass` у `RSMASwarmEnvironment` на объекте `SwarmDelivery`.
 Шаг масс для 6 БПЛА: **12 → 15 → 19,8 → 22 → 25 → 28** кг.
 
 > В префабе `Gyrocopt` стоит реалистичная тяга `maxForce` = 71 Н (P₁ = 3,3 кг + 25 %). При старых 250 Н
@@ -291,7 +296,7 @@ python swarm_check.py --drones 6 --duration 10 --rate 10 --csv results/t3_idle.c
 
 ## T8a. Ветер (требование: до 8–10 м/с)
 
-В `RSMAEnvironment 6` задать `windSpeed` и `gustAmplitude`, `payloadMass` = 19,8, выполнить T5 или T4
+В `RSMASwarmEnvironment` на объекте `SwarmDelivery` задать `windSpeed` и `gustAmplitude`, `payloadMass` = 19,8, выполнить T5 или T4
 с записью `swarm_check.py --point X Z`.
 
 | windSpeed / gustAmplitude, м/с | Критерий (модель) |

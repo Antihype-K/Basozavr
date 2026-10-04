@@ -27,8 +27,10 @@ public class SwarmDeliveryScene : MonoBehaviour
     [Header("Ограничения движения")]
     public float cruiseSpeed = 4.0f;
     public float climbSpeed = 1.5f;
-    public float acceleration = 1.0f;
-    public float swingDamping = 0.15f;
+    // Подобрано на модели сцены (Tools/SwarmModel): пик раскачки 5,3° -> 2,3° при +2,7 с на плече 56 м.
+    // swingDamping > 0 увеличивает раскачку (сдвиг строя по скорости груза), поэтому выключен.
+    public float acceleration = 0.5f;
+    public float swingDamping = 0.0f;
 
     [Header("ПИД дронов под нагрузкой")]
     // Заводские настройки префаба (Kp=5) рассчитаны на полёт без груза:

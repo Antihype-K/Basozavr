@@ -31,7 +31,7 @@ git clone https://github.com/antihype-k/basozavr.git
 
 | Сцена | Что там | Состояние |
 |---|---|---|
-| `Assets/1.unity` | **рабочая сцена**: новые модели `Gyrocopt` (дрон) и `Gruz` (груз). Активен рой `RSMAEnvironment 6` (6 дронов / 12 кг), рои на 5 и 4 дрона выключены | NetMQ-сервер поднимает сам менеджер роя (`startServer`, порт 5555) |
+| `Assets/1.unity` | **рабочая сцена «БАСозавр — доставка роем»**: объект `SwarmDelivery` (`SwarmDeliveryScene`) собирает рой (6 БПЛА, груз 12 кг, трос 2 м), `SwarmScriptedFlight` ведёт всю миссию внутри Unity: натяжение тросов → подъём → перенос → выгрузка → отцепка → возврат → посадка, с HUD и камерой. **Python не нужен**, достаточно Play | NetMQ-сервер для Python тоже поднимается (`startServer`, порт 5555) |
 | `Assets/Scenes/SupremeFlat.unity` | старая сцена: префабы `Prefabs/Drones/Quadrocopter` + `Payload` | для сравнения |
 
 ## 4. Запуск
@@ -45,9 +45,10 @@ git clone https://github.com/antihype-k/basozavr.git
 меню **RSMA → Build SwarmDelivery (Linux)**.
 
 **Из редактора:**
-1. Откройте `Assets/1.unity` и нажмите **Play**.
+1. Откройте `Assets/1.unity` и нажмите **Play**: рой сам выполнит всю миссию, в HUD слева сверху видны этап, расстояние до точки,
+   высота и скорость груза, натяжение тросов, раскачка, путь, время и число рейсов.
 2. В Console должно появиться `[RSMA Engine] Сцена успешно собрана: N дронов, груз M кг.`
-3. Проверьте связь с Python (Unity в Play Mode):
+3. Проверьте связь с Python (Unity в Play Mode, **необязательно**: нужно только для записи телеметрии):
    ```bash
    cd Tools/SwarmCheck
    pip install -r requirements.txt
@@ -55,19 +56,19 @@ git clone https://github.com/antihype-k/basozavr.git
    python swarm_check.py --drones 6 --duration 60 --csv flight.csv   # запись 60 с
    ```
    `[OK] OK: Server is running` — связь есть. Таймаут — сцена не запущена или у менеджера роя выключен `startServer`.
-4. Запустите миссию доставки (рой стартует и выполняет весь цикл):
+4. **Только если нужна Python-миссия вместо встроенной:** на объекте `SwarmDelivery` отключите компонент `SwarmDeliveryScene`
+   и включите `buildOnStart` у `RSMASwarmEnvironment` (иначе встроенный полёт и Python будут задавать цели дронам одновременно).
+   Затем:
    ```bash
    python Tools/SwarmControl/mission.py --drones 6 --payload-mass 19.8 --dropoff <X> <Z> --log mission.csv
    ```
    Контроллер подключается к `tcp://localhost:5555` и задаёт цели дронов через `DroneTargetPose_<id>`.
    `<X> <Z>` — координаты оранжевой площадки выгрузки на сцене (Unity: объект площадки → Transform → Position).
    Без Unity логику этапов можно прогнать на имитаторе: `python Tools/SwarmControl/mock_unity.py` (только кинематика).
-5. После полета запустите файл визуализации из Python-кода. Он строит графики и считает характеристики полета.
+5. После полёта запустите файл визуализации из Python-кода (он строит графики и считает характеристики полёта).
 
 Ориентир, как должно выглядеть: рой взлетает с площадки (синий круг), несёт груз на высоте ~12 м
 к точке выгрузки (оранжевый круг), опускает груз, отцепляет тросы, возвращается и садится.
-В HUD слева сверху отображаются этап, расстояние до точки, высота и скорость груза, натяжение тросов,
-раскачка, путь, время и число рейсов.
 
 ## 5. Протокол Unity ↔ Python
 
@@ -92,26 +93,40 @@ NetMQ `RouterSocket` на порту **5555** (`Assets/Scripts/Apps/NetMQServer/
 
 ## 6. Какие параметры настраивать
 
+**Миссия сцены 1** — компонент `SwarmDeliveryScene` на объекте `SwarmDelivery`:
+
+| Поле | Смысл | Значение |
+|---|---|---|
+| `basePosition` / `deliveryPosition` | база и точка доставки (XZ, высота по рельефу) | (115, 85) / (75, 45), плечо 56,6 м |
+| `cruiseHeight` | высота груза при переносе, м | 12 |
+| `cruiseSpeed` / `climbSpeed` | скорость переноса / подъёма, м/с | 4 / 1,5 |
+| `acceleration` | ограничение ускорения цели, м/с²: главное средство против раскачки | **0,5** (было 1,0) |
+| `swingDamping` | сдвиг строя по скорости груза: на модели **увеличивает** раскачку | **0** (было 0,15) |
+| `positionKp / Ki / Kd` | ПИД дронов под нагрузкой (переопределяет префаб) | 40 / 12 / 14 |
+| `unloadTime`, `hoverTime`, `loop` | выдержки и зацикливание миссии | 3 с, 1,5 с, вкл. |
+
 **Менеджер роя** — компонент `RSMASwarmEnvironment` на сцене:
 
 | Поле | Смысл | 1.unity (рой 1) |
 |---|---|---|
 | `numDrones` | число дронов (расставляются по кругу) | 6 |
 | `payloadMass` | масса груза, кг | 12 |
-| `radius` | радиус расстановки дронов, м | 3 |
-| `cableLength` | свободная длина троса, м | 5 |
-| `startPosition` | точка старта груза | (115, 1, 95.5) |
-| `dronePrefab` / `payloadPrefab` | модели дрона и груза | `Gyrocopt` / `Gruz` |
+| `radius` | радиус расстановки дронов, м | 1,414 |
+| `cableLength` | свободная длина троса, м | 2 |
+| `startPosition` | точка старта груза (задаётся `SwarmDeliveryScene`) | база (115, 85) |
+| `dronePrefab` / `payloadPrefab` | модели дрона и груза | `Quadrocopter` / `Payload` |
 
 Там же: параметры троса (`cableStiffness` 1000 Н/м, `cableDamping` 35 Н·с/м, `cableMaxForce` 250 Н),
 ветер (`windSpeed`, `gustAmplitude`, `windDirection`), отказ дрона (`failDroneId`, `failTime`),
 сервер для Python (`startServer`, `serverPort`).
 
-**Дрон** — компонент `Quadrocopter` на префабе (`Assets/Models/Drone/Gyrocopt.prefab`):
+**Дрон** — компонент `Quadrocopter`. Сцена 1 использует префаб `Assets/Prefabs/Drones/Quadrocopter.prefab` (тяга 250 Н, ПИД
+`SwarmDeliveryScene` переопределяет на 40 / 12 / 14). Префаб `Assets/Models/Drone/Gyrocopt.prefab` (новая модель) настроен
+под эталонное решение из аналитики:
 
-| Поле | Смысл | Значение |
+| Поле | Смысл | `Gyrocopt` |
 |---|---|---|
-| `positionKp / Ki / Kd` | PID по позиции (подобрано перебором на модели) | 10 / 2 / 12 |
+| `positionKp / Ki / Kd` | PID по позиции (подобрано перебором на модели для троса 5 м, радиуса 3 м) | 10 / 2 / 12 |
 | `maxForce` | предел силы дрона, Н (тяга): P₁ = 3,3 кг + запас 25 % | 71 |
 | `maxIntegralForce` | ограничение интегральной составляющей, Н | 250 |
 | `smoothTarget` | вести цель с ограничением скорости и ускорения (меньше раскачка) | выкл. |
@@ -125,7 +140,9 @@ NetMQ `RouterSocket` на порту **5555** (`Assets/Scripts/Apps/NetMQServer/
 
 ```bash
 pip install numpy
-python Tools/SwarmModel/requirements_check.py
+python Tools/SwarmModel/requirements_check.py                      # эталонное решение: трос 5 м, радиус 3 м, тяга 71 Н
+python Tools/SwarmModel/requirements_check.py --preset scene1 --fmax 250   # геометрия и ПИД сцены 1
+python Tools/SwarmModel/scene1_swing.py                            # раскачка на сцене 1: калибровка по видео и перебор параметров
 ```
 За ~30 с прогоняет линейность 400/600 %, предел груза, ветер и отказ дрона на модели с формулами из Unity.
 

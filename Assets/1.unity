@@ -5938,8 +5938,8 @@ MonoBehaviour:
   loop: 1
   cruiseSpeed: 4
   climbSpeed: 1.5
-  acceleration: 1
-  swingDamping: 0.15
+  acceleration: 0.5
+  swingDamping: 0
   positionKp: 40
   positionKi: 12
   positionKd: 14

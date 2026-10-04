@@ -63,9 +63,9 @@ public class SwarmScriptedFlight : MonoBehaviour
     // Скорость подъёма/опускания груза, м/с
     public float climbSpeed = 1.5f;
     // Ограничение ускорения уставки, м/с^2 — главное средство против раскачки
-    public float acceleration = 1.0f;
+    public float acceleration = 0.5f;
     // Сдвиг строя по скорости груза, гасит маятник (0 — выключено)
-    public float swingDamping = 0.15f;
+    public float swingDamping = 0.0f;
     public float maxSwingShift = 1.0f;
 
     [Header("Страховка")]
