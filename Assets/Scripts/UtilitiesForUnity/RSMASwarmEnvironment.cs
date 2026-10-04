@@ -15,13 +15,17 @@ public class RSMASwarmEnvironment : MonoBehaviour
     public float radius = 1.414f;
     public float cableLength = 2.0f;
 
+    [Header("Сборка")]
+    // Снять галочку, если сцену собирает внешний сценарий (например SwarmDeliveryScene)
+    public bool buildOnStart = true;
+
     [HideInInspector] public GameObject payloadInstance;
     [HideInInspector] public List<Quadrocopter> droneInstances = new List<Quadrocopter>();
     [HideInInspector] public List<RSMACable> cableInstances = new List<RSMACable>();
 
     void Start()
     {
-        BuildSwarmScene();
+        if (buildOnStart) BuildSwarmScene();
     }
 
     public void BuildSwarmScene()

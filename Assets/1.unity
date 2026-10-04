@@ -677,60 +677,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 23065607}
   m_Mesh: {fileID: -4620983363280455656, guid: b5b0f0d37bf44ae4eb0399fd57fec8e7, type: 3}
---- !u!1 &23450744
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 23450746}
-  - component: {fileID: 23450745}
-  m_Layer: 0
-  m_Name: RSMAEnvironment 5
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &23450745
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 23450744}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4250c2e746a03d44aaa0b32bc57f788c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RSMASwarmEnvironment
-  dronePrefab: {fileID: 8906316763937658104, guid: 7615b2a5ece37934dbb8c063ee7a2fc3, type: 3}
-  payloadPrefab: {fileID: 6596455495432762000, guid: 4caa1505dc4dd364a9910903a17cdebe, type: 3}
-  startPosition: {x: 95.243, y: 1, z: 105.88}
-  numDrones: 5
-  payloadMass: 10
-  radius: 3
-  cableLength: 5
-  payloadInstance: {fileID: 0}
-  droneInstances: []
-  cableInstances: []
---- !u!4 &23450746
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 23450744}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 95.243, y: 1, z: 105.88}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &26871669
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -5951,6 +5897,93 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 284791268651114956, guid: 7b95330e97604d148ad7cca2c067abc6, type: 3}
   m_PrefabInstance: {fileID: 198474769}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &198905689
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 198905692}
+  - component: {fileID: 198905691}
+  - component: {fileID: 198905690}
+  m_Layer: 0
+  m_Name: SwarmDelivery
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &198905690
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 198905689}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7fd475ceec4f902989c5be5d779227d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SwarmDeliveryScene
+  basePosition: {x: 115, y: 0, z: 85}
+  deliveryPosition: {x: 75, y: 0, z: 45}
+  snapToGround: 1
+  cruiseHeight: 12
+  dropHeight: 0.55
+  unloadTime: 3
+  hoverTime: 1.5
+  releasePayload: 1
+  loop: 1
+  cruiseSpeed: 4
+  climbSpeed: 1.5
+  acceleration: 1
+  swingDamping: 0.15
+  positionKp: 40
+  positionKi: 12
+  positionKd: 14
+  followCamera: 1
+  showHud: 1
+  flight: {fileID: 0}
+--- !u!114 &198905691
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 198905689}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4250c2e746a03d44aaa0b32bc57f788c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RSMASwarmEnvironment
+  dronePrefab: {fileID: 2048108682814108021, guid: ec209db49ee6b104a9613891498eb086, type: 3}
+  payloadPrefab: {fileID: 2041348230739308295, guid: 49a551c37d6d91f4e88ffb9418c97350, type: 3}
+  startPosition: {x: 115, y: 0.18, z: 96}
+  numDrones: 6
+  payloadMass: 12
+  radius: 1.414
+  cableLength: 2
+  buildOnStart: 0
+  payloadInstance: {fileID: 0}
+  droneInstances: []
+  cableInstances: []
+--- !u!4 &198905692
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 198905689}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &199769019 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 679342582085898403, guid: bcfad394453d52f4b801d2c833f7c47e, type: 3}
@@ -43993,60 +44026,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 284791268651114956, guid: 7b95330e97604d148ad7cca2c067abc6, type: 3}
   m_PrefabInstance: {fileID: 1593237830}
   m_PrefabAsset: {fileID: 0}
---- !u!1 &1597752225
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1597752227}
-  - component: {fileID: 1597752226}
-  m_Layer: 0
-  m_Name: RSMAEnvironment 4
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1597752226
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1597752225}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4250c2e746a03d44aaa0b32bc57f788c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RSMASwarmEnvironment
-  dronePrefab: {fileID: 8906316763937658104, guid: 7615b2a5ece37934dbb8c063ee7a2fc3, type: 3}
-  payloadPrefab: {fileID: 6596455495432762000, guid: 4caa1505dc4dd364a9910903a17cdebe, type: 3}
-  startPosition: {x: 134.31, y: 1, z: 105.18}
-  numDrones: 4
-  payloadMass: 8
-  radius: 3
-  cableLength: 5
-  payloadInstance: {fileID: 0}
-  droneInstances: []
-  cableInstances: []
---- !u!4 &1597752227
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1597752225}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 134.31, y: 1, z: 105.18}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1598442538
 GameObject:
   m_ObjectHideFlags: 0
@@ -49282,60 +49261,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1795646924}
   m_Mesh: {fileID: 4707815848320065675, guid: b5b0f0d37bf44ae4eb0399fd57fec8e7, type: 3}
---- !u!1 &1795713707
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1795713709}
-  - component: {fileID: 1795713708}
-  m_Layer: 0
-  m_Name: RSMAEnvironment 6
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1795713708
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1795713707}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4250c2e746a03d44aaa0b32bc57f788c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RSMASwarmEnvironment
-  dronePrefab: {fileID: 8906316763937658104, guid: 7615b2a5ece37934dbb8c063ee7a2fc3, type: 3}
-  payloadPrefab: {fileID: 6596455495432762000, guid: 4caa1505dc4dd364a9910903a17cdebe, type: 3}
-  startPosition: {x: 115, y: 1, z: 95.5}
-  numDrones: 6
-  payloadMass: 12
-  radius: 3
-  cableLength: 5
-  payloadInstance: {fileID: 0}
-  droneInstances: []
-  cableInstances: []
---- !u!4 &1795713709
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1795713707}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 115, y: 1, z: 95.52}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1796250436
 GameObject:
   m_ObjectHideFlags: 0
@@ -57537,9 +57462,6 @@ SceneRoots:
   - {fileID: 1731866615}
   - {fileID: 142763995}
   - {fileID: 1351091727}
-  - {fileID: 1795713709}
-  - {fileID: 1597752227}
-  - {fileID: 23450746}
   - {fileID: 100455318}
   - {fileID: 555145251}
   - {fileID: 311419217}
@@ -57596,3 +57518,4 @@ SceneRoots:
   - {fileID: 689919283}
   - {fileID: 1202771527}
   - {fileID: 750141749}
+  - {fileID: 198905692}
