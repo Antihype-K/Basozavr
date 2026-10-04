@@ -55,8 +55,13 @@ git clone https://github.com/antihype-k/basozavr.git
    python swarm_check.py --drones 6 --duration 60 --csv flight.csv   # запись 60 с
    ```
    `[OK] OK: Server is running` — связь есть. Таймаут — сцена не запущена или у менеджера роя выключен `startServer`.
-4. Запустите Python-управление роем (отдельный код команды). Он подключается к `tcp://localhost:5555`
-   и задаёт целевые точки дронов через топики `DroneTargetPose_<id>`.
+4. Запустите миссию доставки (рой стартует и выполняет весь цикл):
+   ```bash
+   python Tools/SwarmControl/mission.py --drones 6 --payload-mass 19.8 --dropoff <X> <Z> --log mission.csv
+   ```
+   Контроллер подключается к `tcp://localhost:5555` и задаёт цели дронов через `DroneTargetPose_<id>`.
+   `<X> <Z>` — координаты оранжевой площадки выгрузки на сцене (Unity: объект площадки → Transform → Position).
+   Без Unity логику этапов можно прогнать на имитаторе: `python Tools/SwarmControl/mock_unity.py` (только кинематика).
 5. После полета запустите файл визуализации из Python-кода. Он строит графики и считает характеристики полета.
 
 Ориентир, как должно выглядеть: рой взлетает с площадки (синий круг), несёт груз на высоте ~12 м
@@ -106,7 +111,7 @@ NetMQ `RouterSocket` на порту **5555** (`Assets/Scripts/Apps/NetMQServer/
 
 | Поле | Смысл | Значение |
 |---|---|---|
-| `positionKp / Ki / Kd` | PID по позиции | 5 / 1 / 1.5 |
+| `positionKp / Ki / Kd` | PID по позиции (подобрано перебором на модели) | 10 / 2 / 12 |
 | `maxForce` | предел силы дрона, Н (тяга): P₁ = 3,3 кг + запас 25 % | 71 |
 | `maxIntegralForce` | ограничение интегральной составляющей, Н | 250 |
 | `smoothTarget` | вести цель с ограничением скорости и ускорения (меньше раскачка) | выкл. |

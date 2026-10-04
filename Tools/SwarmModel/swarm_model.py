@@ -11,7 +11,7 @@ def cm(v, m):
     n = np.linalg.norm(v); return v if n <= m or n == 0 else v*(m/n)
 
 def run(P):
-    p = dict(n=6, M=12.0, radius=3.0, L=5.0, md=2.5, Fmax=250.0, kp=5, ki=1, kd=1.5, Imax=250.0,
+    p = dict(n=6, M=12.0, radius=3.0, L=5.0, md=2.5, Fmax=250.0, kp=10, ki=2, kd=12, Imax=250.0,
              vmax=4.6, amax=0.5, smooth=True, wind=0.0, gust=0.0, wind_dir=(0, 0, 1),
              cdA_drone=0.1, cdA_load=0.17, eq=False, eq_gain=0.02, eq_lim=1.5,
              fail_id=None, fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)

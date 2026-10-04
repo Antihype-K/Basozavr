@@ -190,9 +190,9 @@ MonoBehaviour:
   droneId: 0
   maxSpeed: 3
   maxForce: 71
-  positionKp: 5
-  positionKi: 1
-  positionKd: 1.5
+  positionKp: 10
+  positionKi: 2
+  positionKd: 12
   propeller1: {fileID: 108002742095382682}
   propeller2: {fileID: 6185145313698123455}
   propeller3: {fileID: 1146115181958958783}
