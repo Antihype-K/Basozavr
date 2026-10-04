@@ -26,7 +26,9 @@ public class SwarmDeliveryScene : MonoBehaviour
 
     [Header("Ограничения движения")]
     public float cruiseSpeed = 4.0f;
-    public float climbSpeed = 1.5f;
+    public float climbSpeed = 2.5f;
+    // Плавные подъём и посадка груза (на модели: скорость касания 1,05 -> 0,44 м/с, пик натяжения 195 -> 175 Н)
+    public float climbAcceleration = 0.7f;
     // Подобрано на модели сцены (Tools/SwarmModel): пик раскачки 5,3° -> 2,3° при +2,7 с на плече 56 м.
     // swingDamping > 0 увеличивает раскачку (сдвиг строя по скорости груза), поэтому выключен.
     public float acceleration = 0.5f;
@@ -111,6 +113,7 @@ public class SwarmDeliveryScene : MonoBehaviour
 
         flight.cruiseSpeed = cruiseSpeed;
         flight.climbSpeed = climbSpeed;
+        flight.climbAcceleration = climbAcceleration;
         flight.acceleration = acceleration;
         flight.swingDamping = swingDamping;
 

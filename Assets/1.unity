@@ -5937,7 +5937,7 @@ MonoBehaviour:
   releasePayload: 1
   loop: 1
   cruiseSpeed: 4
-  climbSpeed: 1.5
+  climbSpeed: 2.5
   acceleration: 0.5
   swingDamping: 0
   positionKp: 40

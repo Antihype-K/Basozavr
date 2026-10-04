@@ -61,7 +61,10 @@ public class SwarmScriptedFlight : MonoBehaviour
     // Крейсерская скорость переноса груза, м/с
     public float cruiseSpeed = 4.0f;
     // Скорость подъёма/опускания груза, м/с
-    public float climbSpeed = 1.5f;
+    public float climbSpeed = 2.5f;
+    // Ограничение вертикального ускорения, м/с^2 (0 — скорость набирается мгновенно).
+    // Нужно для мягкой посадки груза на землю и плавного подъёма: без него груз касался земли на ~1,3 м/с
+    public float climbAcceleration = 0.7f;
     // Ограничение ускорения уставки, м/с^2 — главное средство против раскачки
     public float acceleration = 0.5f;
     // Сдвиг строя по скорости груза, гасит маятник (0 — выключено)
@@ -97,6 +100,7 @@ public class SwarmScriptedFlight : MonoBehaviour
     // Центр строя = уставка + компенсация раскачки
     private Vector3 formationCenter;
     private float horizontalSpeed;
+    private float verticalSpeed;
     private float holdTimer;
     private float legTimer;
     private bool holding;
@@ -139,6 +143,7 @@ public class SwarmScriptedFlight : MonoBehaviour
         holdTimer = 0.0f;
         legTimer = 0.0f;
         horizontalSpeed = 0.0f;
+        verticalSpeed = 0.0f;
         MissionTime = 0.0f;
         TraveledDistance = 0.0f;
         LapsDone = 0;
@@ -323,7 +328,19 @@ public class SwarmScriptedFlight : MonoBehaviour
         }
 
         // Вертикаль ведём отдельно и медленнее: подъём/спуск груза
-        setpoint.y = Mathf.MoveTowards(setpoint.y, wp.position.y, climbSpeed * dt);
+        float verticalLeft = wp.position.y - setpoint.y;
+        if (climbAcceleration > 0.0f)
+        {
+            // Разгон с ограничением ускорения и торможение перед целью, чтобы груз касался земли мягко
+            float wanted = Mathf.Sign(verticalLeft) *
+                           Mathf.Min(climbSpeed, Mathf.Sqrt(2.0f * climbAcceleration * Mathf.Abs(verticalLeft)));
+            verticalSpeed = Mathf.MoveTowards(verticalSpeed, wanted, climbAcceleration * dt);
+            setpoint.y = Mathf.MoveTowards(setpoint.y, wp.position.y, Mathf.Abs(verticalSpeed) * dt);
+        }
+        else
+        {
+            setpoint.y = Mathf.MoveTowards(setpoint.y, wp.position.y, climbSpeed * dt);
+        }
 
         // Компенсация раскачки: строй идёт за грузом, гася маятник
         Vector3 shift = Vector3.zero;
