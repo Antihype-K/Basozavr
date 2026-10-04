@@ -13,6 +13,22 @@ public class Quadrocopter : MonoBehaviour
     public float positionKp = 8.0f;
     public float positionKi = 2.0f;
     public float positionKd = 2.0f;
+    [Tooltip("Ограничение вклада интегральной составляющей, Н (защита от накопления ошибки)")]
+    public float maxIntegralForce = 250.0f;
+
+    [Header("Масса и сопротивление")]
+    public float droneMass = 2.5f;      // Масса дрона из config.py
+    public float linearDrag = 0.8f;
+    public float angularDrag = 3.0f;
+
+    [Header("Сглаживание цели")]
+    [Tooltip("Вести цель к точке Python с ограничением скорости (maxSpeed) и ускорения (maxAcceleration): меньше раскачка груза")]
+    public bool smoothTarget = false;
+    public float maxAcceleration = 0.5f;
+
+    [Header("Отказ")]
+    [Tooltip("Имитация отказа: дрон перестает создавать тягу (для проверки отказоустойчивости)")]
+    public bool isFailed = false;
 
     public GameObject propeller1 = null;
     public GameObject propeller2 = null;
@@ -22,7 +38,9 @@ public class Quadrocopter : MonoBehaviour
     private float propMaxVelocity = 9800.0f;
 
     private Rigidbody rb;
-    private Vector3 targetPosition;
+    private Vector3 targetPosition;     // точка, заданная Python
+    private Vector3 setpoint;           // точка, которую отрабатывает PID (с учетом сглаживания)
+    private Vector3 setpointVelocity;
     private bool isControlledByApi = false;
 
     private Vector3 integralError = new Vector3(0, 0, 0);
@@ -33,14 +51,14 @@ public class Quadrocopter : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
-        rb.mass = 2.5f; // Масса дрона из config.py (2.5 кг)
+        rb.mass = droneMass;
 
 #if UNITY_2023_1_OR_NEWER
-        rb.linearDamping = 0.8f;
-        rb.angularDamping = 3.0f;
+        rb.linearDamping = linearDrag;
+        rb.angularDamping = angularDrag;
 #else
-        rb.drag = 0.8f;
-        rb.angularDrag = 3.0f;
+        rb.drag = linearDrag;
+        rb.angularDrag = angularDrag;
 #endif
         rb.useGravity = true;
     }
@@ -53,6 +71,7 @@ public class Quadrocopter : MonoBehaviour
         pose.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         targetPosition = transform.position;
+        setpoint = transform.position;
         DataBroker.Publish($"DronePose_{droneId}", pose);
     }
 
@@ -80,17 +99,56 @@ public class Quadrocopter : MonoBehaviour
 
     public void SetTargetPosition(Vector3 targetPos)
     {
+        if (!isControlledByApi)
+        {
+            // Первая команда: сглаженная цель стартует из текущего положения
+            setpoint = transform.position;
+            setpointVelocity = Vector3.zero;
+        }
         targetPosition = targetPos;
         isControlledByApi = true;
     }
 
+    // Ведет setpoint к targetPosition с ограничением скорости и ускорения и торможением перед точкой
+    private void UpdateSetpoint(float dt)
+    {
+        if (!smoothTarget || maxSpeed <= 0.0f)
+        {
+            setpoint = targetPosition;
+            setpointVelocity = Vector3.zero;
+            return;
+        }
+
+        Vector3 toTarget = targetPosition - setpoint;
+        float distance = toTarget.magnitude;
+
+        float speedLimit = maxSpeed;
+        if (maxAcceleration > 0.0f)
+            speedLimit = Mathf.Min(maxSpeed, Mathf.Sqrt(2.0f * maxAcceleration * distance));
+
+        Vector3 desiredVelocity = distance > 1e-4f ? toTarget / distance * speedLimit : Vector3.zero;
+        Vector3 deltaV = desiredVelocity - setpointVelocity;
+        if (maxAcceleration > 0.0f)
+            deltaV = Vector3.ClampMagnitude(deltaV, maxAcceleration * dt);
+        setpointVelocity += deltaV;
+
+        Vector3 step = setpointVelocity * dt;
+        setpoint = step.magnitude >= distance ? targetPosition : setpoint + step;
+    }
+
     void FixedUpdate()
     {
-        if (!isControlledByApi) return;
+        if (!isControlledByApi || isFailed) return;
+
+        UpdateSetpoint(Time.fixedDeltaTime);
 
         // Расчет ошибки позиции
-        Vector3 positionError = targetPosition - transform.position;
+        Vector3 positionError = setpoint - transform.position;
         integralError += positionError * Time.fixedDeltaTime;
+
+        // Анти-windup: интегральная составляющая не больше maxIntegralForce
+        if (positionKi > 0.0f)
+            integralError = Vector3.ClampMagnitude(integralError * positionKi, maxIntegralForce) / positionKi;
 
         Vector3 currentVel = rb.linearVelocity;
 
@@ -100,8 +158,13 @@ public class Quadrocopter : MonoBehaviour
         // Полная компенсация гравитации дрона
         force += -Physics.gravity * rb.mass;
 
-        // Запас по вертикальной силе (до 250 Н на дрон), чтобы тянуть кабель и груз
-        force = Vector3.ClampMagnitude(force, maxForce);
+        // Ограничение силы (до maxForce на дрон) с приоритетом вертикали:
+        // горизонтальная составляющая получает только остаток, чтобы дрон не проседал при маневре
+        float verticalForce = Mathf.Clamp(force.y, -maxForce, maxForce);
+        Vector3 horizontalForce = new Vector3(force.x, 0.0f, force.z);
+        float horizontalLimit = Mathf.Sqrt(maxForce * maxForce - verticalForce * verticalForce);
+        horizontalForce = Vector3.ClampMagnitude(horizontalForce, horizontalLimit);
+        force = horizontalForce + Vector3.up * verticalForce;
 
         rb.AddForce(force, ForceMode.Force);
 

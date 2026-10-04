@@ -98,21 +98,33 @@ NetMQ `RouterSocket` на порту **5555** (`Assets/Scripts/Apps/NetMQServer/
 | `startPosition` | точка старта груза | (115, 1, 95.5) |
 | `dronePrefab` / `payloadPrefab` | модели дрона и груза | `Gyrocopt` / `Gruz` |
 
-Жёсткость (1000 Н/м), демпфирование (35 Н·с/м) и предел силы троса (250 Н) пока зашиты
-в `RSMASwarmEnvironment.cs`.
+Там же: параметры троса (`cableStiffness` 1000 Н/м, `cableDamping` 35 Н·с/м, `cableMaxForce` 250 Н),
+ветер (`windSpeed`, `gustAmplitude`, `windDirection`), отказ дрона (`failDroneId`, `failTime`),
+сервер для Python (`startServer`, `serverPort`).
 
 **Дрон** — компонент `Quadrocopter` на префабе (`Assets/Models/Drone/Gyrocopt.prefab`):
 
 | Поле | Смысл | Значение |
 |---|---|---|
 | `positionKp / Ki / Kd` | PID по позиции | 5 / 1 / 1.5 |
-| `maxForce` | предел суммарной силы дрона, Н (это и есть «тяга») | 250 |
-| `maxSpeed` | задумано как ограничение скорости, **в коде не используется** | 3 |
-| масса | **жёстко 2.5 кг** в `Quadrocopter.Awake()`; значение в префабе игнорируется | 2.5 |
+| `maxForce` | предел силы дрона, Н (тяга): P₁ = 3,3 кг + запас 25 % | 71 |
+| `maxIntegralForce` | ограничение интегральной составляющей, Н | 250 |
+| `smoothTarget` | вести цель с ограничением скорости и ускорения (меньше раскачка) | выкл. |
+| `maxSpeed` / `maxAcceleration` | ограничения для `smoothTarget`, м/с и м/с² | 3 / 0,5 |
+| `droneMass`, `linearDrag`, `angularDrag` | масса и сопротивление | 2,5 / 0,8 / 3 |
+| `isFailed` | имитация отказа дрона | выкл. |
 
 Шаг физики: `Fixed Timestep = 0.01` с (Project Settings → Time).
 
-## 7. Кто что делает
+## 7. Проверка требований на модели
+
+```bash
+pip install numpy
+python Tools/SwarmModel/requirements_check.py
+```
+За ~30 с прогоняет линейность 400/600 %, предел груза, ветер и отказ дрона на модели с формулами из Unity.
+
+## 8. Кто что делает
 
 - **Разработчики**: (1) компоненты на новых моделях, префабы дрона и груза; (2) менеджер роя на новой сцене;
   (3) проверка Python-части на новой сцене (`swarm_check.py` + управление роем).

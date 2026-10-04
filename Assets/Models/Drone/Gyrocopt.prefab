@@ -189,7 +189,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Quadrocopter
   droneId: 0
   maxSpeed: 3
-  maxForce: 250
+  maxForce: 71
   positionKp: 5
   positionKi: 1
   positionKd: 1.5

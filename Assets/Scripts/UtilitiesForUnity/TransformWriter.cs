@@ -62,7 +62,7 @@ public class TransformWriter : MonoBehaviour
             foreach (WritableTransform target in targetTransforms)
             {
                 line += $";{target.transform.position.x};{target.transform.position.y};{target.transform.position.z};{time};";
-                chart.UpdateChart(target.transform.position.y, time);
+                if (chart != null) chart.UpdateChart(target.transform.position.y, time);
             }
 
             textWriter.WriteLine(line);

@@ -56,9 +56,12 @@ namespace RSMA.NetMQ
 
         public static void Stop()
         {
+            // Цикл сервера сам выходит в течение ReceiveTimeout и закрывает сокет;
+            // блокирующий Cleanup() здесь мог подвесить выход из Play Mode и закрытие приложения
             _isRunning = false;
-            NetMQConfig.Cleanup();
         }
+
+        private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromMilliseconds(100);
 
         private static void ServerLoop(int serverPort)
         {
@@ -70,7 +73,10 @@ namespace RSMA.NetMQ
                 while (_isRunning)
                 {
                     // Router сообщение в формате: [Identity, EmptyFrame, Data]
-                    var message = server.ReceiveMultipartMessage();
+                    // Прием с таймаутом, чтобы цикл замечал Stop()
+                    NetMQMessage message = null;
+                    if (!server.TryReceiveMultipartMessage(ReceiveTimeout, ref message))
+                        continue;
 
                     if (message.FrameCount >= 3)
                     {
@@ -91,7 +97,7 @@ namespace RSMA.NetMQ
                     }
                 }
             }
-            NetMQConfig.Cleanup();
+            NetMQConfig.Cleanup(false);
         }
 
         private static string ProcessCommand(string command)

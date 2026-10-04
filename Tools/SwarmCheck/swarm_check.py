@@ -6,12 +6,15 @@
     DronePose_<id>        (Pose)    - фактическая позиция дрона
     DroneTargetPose_<id>  (Pose)    - целевая позиция, которую задает Python
     CableForce_<id>       (Float32) - натяжение троса, Н
+    PayloadPose           (Pose)    - позиция груза
+    PayloadVelocity       (Pose)    - скорость груза (в поле position)
 и сохраняет их в CSV, а в конце печатает сводку характеристик.
 
 Использование:
     python swarm_check.py                      # проверка связи + 1 опрос
     python swarm_check.py --drones 6 --duration 60 --csv flight.csv
     python swarm_check.py --port 5555 --rate 20
+    python swarm_check.py --duration 90 --point 185.2 95.5   # точность выгрузки в точке (x, z)
 
 Unity должна быть в Play Mode, а на сцене должен быть объект с ServerApp
 (иначе сервер не запущен и скрипт завершится по таймауту).
@@ -20,6 +23,7 @@ Unity должна быть в Play Mode, а на сцене должен быт
 import argparse
 import csv
 import json
+import math
 import sys
 import time
 
@@ -76,6 +80,8 @@ def main():
     parser.add_argument("--rate", type=float, default=10.0, help="частота опроса, Гц")
     parser.add_argument("--csv", help="файл для сохранения телеметрии")
     parser.add_argument("--timeout", type=int, default=2000, help="таймаут ответа, мс")
+    parser.add_argument("--point", type=float, nargs=2, metavar=("X", "Z"),
+                        help="точка выгрузки: считать точность позиционирования груза")
     args = parser.parse_args()
 
     client = RsmaClient(args.host, args.port, args.timeout)
@@ -87,7 +93,7 @@ def main():
     print(f"[OK] {status}")
 
     ids = range(1, args.drones + 1)
-    header = ["t"]
+    header = ["t", "px", "py", "pz", "pv", "swing"]
     for i in ids:
         header += [f"x{i}", f"y{i}", f"z{i}", f"tx{i}", f"ty{i}", f"tz{i}", f"F{i}"]
 
@@ -96,11 +102,16 @@ def main():
     period = 1.0 / args.rate
     while True:
         row = [round(time.time() - t0, 3)]
+        _, px, py, pz = read_pose(client, "PayloadPose")
+        _, vx, vy, vz = read_pose(client, "PayloadVelocity")
+        drones = []
         for i in ids:
             _, x, y, z = read_pose(client, f"DronePose_{i}")
             _, tx, ty, tz = read_pose(client, f"DroneTargetPose_{i}")
             force = client.get(f"CableForce_{i}", "Float32").get("value", 0.0)
-            row += [x, y, z, tx, ty, tz, force]
+            drones += [x, y, z, tx, ty, tz, force]
+        row += [px, py, pz, math.sqrt(vx * vx + vy * vy + vz * vz), swing_angle(px, py, pz, drones)]
+        row += drones
         rows.append(row)
         if time.time() - t0 >= args.duration:
             break
@@ -115,13 +126,40 @@ def main():
         print(f"Сохранено строк: {len(rows)} -> {args.csv}")
 
     print_summary(rows, ids)
+    print_payload_summary(rows, args.point)
     return 0
+
+
+def swing_angle(px, py, pz, drones):
+    """Угол между вертикалью и направлением груз -> центр строя, градусы."""
+    n = len(drones) // 7
+    cx = sum(drones[k * 7] for k in range(n)) / n - px
+    cy = sum(drones[k * 7 + 1] for k in range(n)) / n - py
+    cz = sum(drones[k * 7 + 2] for k in range(n)) / n - pz
+    norm = math.sqrt(cx * cx + cy * cy + cz * cz)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cy / norm)))) if norm > 1e-6 else 0.0
+
+
+def print_payload_summary(rows, point):
+    heights = [r[2] for r in rows]
+    speeds = [r[4] for r in rows]
+    swings = [r[5] for r in rows]
+    print(f"\nГруз: высота {heights[-1]:.2f} м (макс {max(heights):.2f}), скорость макс {max(speeds):.2f} м/с, "
+          f"раскачка макс {max(swings):.1f}° (в конце {swings[-1]:.1f}°)")
+    forces = [sum(r[6 + k * 7 + 6] for k in range((len(r) - 6) // 7)) for r in rows]
+    print(f"Суммарное натяжение тросов: {forces[-1]:.1f} Н (макс {max(forces):.1f})")
+    if point:
+        x0, z0 = point
+        # Оцениваем по последним 5 с записи (зависание над точкой), а не по минимуму: груз может пролететь через точку
+        tail = [math.hypot(r[1] - x0, r[3] - z0) for r in rows if r[0] >= rows[-1][0] - 5.0]
+        print(f"Точность позиционирования груза в точке ({x0}, {z0}) за последние 5 с: "
+              f"среднее {sum(tail) / len(tail):.3f} м, макс {max(tail):.3f} м")
 
 
 def print_summary(rows, ids):
     print(f"\n{'id':>3} {'высота, м':>10} {'ошибка, м':>10} {'ошибка max':>10} {'F ср, Н':>8} {'F max, Н':>9}")
     for k, i in enumerate(ids):
-        b = 1 + k * 7
+        b = 6 + k * 7
         heights, errors, forces = [], [], []
         for r in rows:
             x, y, z, tx, ty, tz, force = r[b:b + 7]
