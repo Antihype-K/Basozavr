@@ -25,5 +25,6 @@ RSMA - набор инструментов, методов и алгоритмо
 - [Как запустить решение](docs/ONBOARDING.md)
 - [Аналитика и список на доработку](docs/ANALYTICS.md)
 - [Гайд по тестированию](docs/TEST_GUIDE.md)
+- [Разбор Python-контроллера команды (GitLab)](docs/PYTHON_CONTROLLER_REVIEW.md)
 - Миссия доставки: `python Tools/SwarmControl/mission.py --dropoff X Z`; проверка требований на модели: `python Tools/SwarmModel/requirements_check.py`
 - Проверка связи с Python: `Tools/SwarmCheck/swarm_check.py`, ступенчатый тест роя: `Tools/SwarmCheck/step_test.py`

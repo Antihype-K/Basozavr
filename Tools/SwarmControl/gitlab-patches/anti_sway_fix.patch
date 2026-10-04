@@ -1,0 +1,50 @@
+diff --git a/Source/control/anti_sway.py b/Source/control/anti_sway.py
+index a46c380..486c312 100644
+--- a/Source/control/anti_sway.py
++++ b/Source/control/anti_sway.py
+@@ -11,12 +11,20 @@ class AntiSwayController:
+         self.k_sway = k_sway
+         self.d_sway = d_sway
+         self.prev_angle_vector = np.zeros(2, dtype=float)
++        self.initialized = False
+ 
+-    def compute_sway_correction(self, drone_pos: np.ndarray, payload_pos: np.ndarray, dt: float) -> np.ndarray:
++    def compute_sway_correction(self, drone_pos: np.ndarray, payload_pos: np.ndarray, dt: float,
++                                nominal_offset: np.ndarray = None) -> np.ndarray:
+         """
+         Возвращает векторы добавки к целевой позиции [dx, dy] для гашения раскачки.
++
++        nominal_offset — номинальное смещение дрона от груза в строю ([dx, dy, 0], FormationManager).
++        Раскачкой считается только отклонение от него: без этого угол троса включает радиус строя
++        (~40° при R=1.414 и высоте 1.6 м), и поправка -K*угол сжимает строй к центру вместо гашения маятника.
+         """
+         delta = drone_pos - payload_pos
++        if nominal_offset is not None:
++            delta = delta - np.asarray(nominal_offset, dtype=float)
+         length = np.linalg.norm(delta)
+         
+         if length < 1e-3:
+@@ -28,6 +36,10 @@ class AntiSwayController:
+         angle_vector = np.array([angle_x, angle_y])
+ 
+         # Скорость изменения угла (угловая скорость маятника)
++        # На первом вызове производной нет: иначе (угол - 0)/dt даёт выброс уставки на десятки метров
++        if not self.initialized:
++            self.prev_angle_vector = angle_vector
++            self.initialized = True
+         angle_rate = (angle_vector - self.prev_angle_vector) / dt if dt > 0 else np.zeros(2)
+         self.prev_angle_vector = angle_vector
+ 
+diff --git a/Source/control/swarm_controller.py b/Source/control/swarm_controller.py
+index 0d6d3f0..c5a370f 100644
+--- a/Source/control/swarm_controller.py
++++ b/Source/control/swarm_controller.py
+@@ -123,7 +123,7 @@ class SwarmRSMAController:
+                     drones_positions[d_id] = d_pos
+ 
+                     if payload_is_airborne and fsm.phase == SwarmFlightPhase.TRAJECTORY:
+-                        sway_corr = self.anti_sways[d_id].compute_sway_correction(d_pos, payload_pos, current_dt)
++                        sway_corr = self.anti_sways[d_id].compute_sway_correction(d_pos, payload_pos, current_dt, self.offsets[d_id])
+                     else:
+                         sway_corr = np.array([0.0, 0.0])
+ 

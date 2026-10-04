@@ -82,7 +82,7 @@ def run(P):
     p = dict(n=6, M=12.0, radius=3.0, L=5.0, md=2.5, Fmax=250.0, kp=10, ki=2, kd=12, Imax=250.0,
              vmax=4.6, amax=0.3, smooth=True, wind=0.0, gust=0.0, wind_dir=(0, 0, 1),
              cdA_drone=0.1, cdA_load=0.17, eq=False, eq_gain=0.02, eq_lim=1.5,
-             fail_id=None, shaper='zvd', shaper_T=5.5, shift_k=0.0, shift_lim=1.0,  fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
+             fail_id=None, shaper='zvd', shaper_T=5.5, shift_k=0.0, shift_lim=1.0, jtraj=None, aw_k=0.0, aw_d=0.0, aw_mode='theirs', aw_from=12.0,  fail_t=1e9, T=70.0, H=13.0, D=70.0, seed=1, k=1000, c=35, cmax=250)
     p.update(P); n = p['n']; rng = np.random.default_rng(p['seed'])
     ang = np.arange(n)*2*np.pi/n + (np.pi/4 if n == 4 else 0)
     off = np.stack([p['radius']*np.cos(ang), np.zeros(n), p['radius']*np.sin(ang)], 1)
@@ -93,13 +93,37 @@ def run(P):
     gust_phase = rng.uniform(0, 6.28, 3)
     log = []; hist = []
     script = Script(p, pp) if p.get('route') else None
+    aw_prev = np.zeros((n, 2))
+    jt = None
+    if p['jtraj']:
+        # control/trajectory.py (rsma-swarm-delivery-system) без изменений: ограничение ускорения и рывка по осям
+        jt = dict(pos=np.array([0.0, 0.0]), vel=np.zeros(2), acc=np.zeros(2), target=np.array([p['D'], 0.0]), **p['jtraj'])
     for kk in range(int(p['T']/DT)):
         t = kk*DT
         if script and script.done: break
         goal = np.array([0, p['H'], 0]) if t < 12 else np.array([p['D'], p['H'], 0])
         if t < 12: goal = np.array([0, 0.4 + (p['H']-0.4)*min(t, 10)/10, 0])
         stage = -1
-        if script:
+        if jt is not None:
+            if t >= 12:
+                d = jt['target'] - jt['pos']; dist = np.linalg.norm(d)
+                if dist < 0.3 or jt.get('hover'):
+                    # flight_state_machine.py: при dist_cmd_to_finish < 0.3 включается HOVER, уставка = точка финиша
+                    jt['hover'] = True; jt['pos'] = jt['target'].copy(); jt['vel'] = np.zeros(2); jt['acc'] = np.zeros(2)
+                elif dist >= 1e-3:
+                    if jt.get('brake_jerk'):
+                        # путь торможения с учётом рывка: d = v²/(2a) + v·a/(2j)  =>  v = -a²/(2j) + sqrt(a⁴/(4j²) + 2·a·d)
+                        am_, jm_ = jt['amax'], jt['jmax']
+                        tv = min(jt['vmax'], -am_**2/(2*jm_) + np.sqrt(am_**4/(4*jm_**2) + 2*am_*dist))
+                    else:
+                        tv = min(jt['vmax'], np.sqrt(2*jt['amax']*dist))
+                    dvel = d/dist*tv
+                    acc_err = np.clip((dvel - jt['vel'])/DT, -jt['amax'], jt['amax'])
+                    jerk = np.clip((acc_err - jt['acc'])/DT, -jt['jmax'], jt['jmax'])
+                    jt['acc'] = jt['acc'] + jerk*DT; jt['vel'] = jt['vel'] + jt['acc']*DT; jt['pos'] = jt['pos'] + jt['vel']*DT
+            ramp = 0.4 + (p['H']-0.4)*min(t, 10)/10
+            sp = np.array([jt['pos'][0], ramp, jt['pos'][1]])
+        elif script:
             centre, height, stage = script.step(pp, DT)
             sp = centre + [0, height, 0]
         elif p['smooth']:
@@ -122,8 +146,17 @@ def run(P):
         alive = np.array([not (p['fail_id'] == i and t >= p['fail_t']) for i in range(n)])
         # как в SwarmScriptedFlight.swingDamping: строй сдвигается по горизонтальной скорости груза
         shift = cm(p['shift_k']*pv*[1, 0, 1], p['shift_lim']) if p['shift_k'] > 0 else np.zeros(3)
+        aw = np.zeros((n, 2))
+        if p['aw_k'] > 0 and t >= p['aw_from'] and pp[1] > 0.8:
+            # anti_sway.py из rsma-swarm-delivery-system: -K*угол - D*скорость угла, угол = atan2(смещение, высота)
+            for i in range(n):
+                d = dp[i] - pp
+                if p['aw_mode'] == 'fixed': d = d - off[i]      # исправленный вариант: только отклонение от номинальной геометрии
+                ang = np.array([np.arctan2(d[0], dp[i, 1]-pp[1]), np.arctan2(d[2], dp[i, 1]-pp[1])])
+                aw[i] = -p['aw_k']*ang - p['aw_d']*(ang - aw_prev[i])/DT
+                aw_prev[i] = ang
         for i in range(n):
-            tgt = spc + off[i] + [0, hoff[i], 0] + shift
+            tgt = spc + off[i] + [0, hoff[i], 0] + shift + [aw[i, 0], 0, aw[i, 1]]
             if alive[i]:
                 e = tgt - dp[i]; I[i] += e*DT; I[i] = cm(I[i]*p['ki'], p['Imax'])/p['ki']
                 f = p['kp']*e + p['ki']*I[i] - p['kd']*dv[i] - G*p['md']
