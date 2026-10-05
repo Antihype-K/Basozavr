@@ -9,6 +9,8 @@ from RSMA.Client import RSMAClient
 from RSMA.uDTP.Topics.Pose import Pose
 from RSMA.Types.Quaternion import Quaternion
 from RSMA.uDTP.Topics.Float32 import Float32
+from RSMA.uDTP.Topics.MissionStatus import MissionStatus
+from RSMA.Types.Vector3 import Vector3
 from RSMA.Time import get_unix_time_milliseconds
 
 from control.formation import FormationManager
@@ -68,6 +70,8 @@ class SwarmRSMAController:
         delta_y = getattr(cfg, 'TARGET_OFFSET_Y', 8)
         finish_xy = np.array([start_pos[0] + delta_x, start_pos[1] + delta_y])
         flight_z = getattr(cfg, 'CRUISE_ALTITUDE', 3.0)
+        total_dist = max(1e-6, float(np.linalg.norm(finish_xy - start_pos[:2])))
+        status_every = getattr(cfg, 'STATUS_EVERY_STEPS', 5)
 
         # Подсистемы
         fsm = FlightStateMachine(start_pos=start_pos, finish_xy=finish_xy, target_flight_z=flight_z)
@@ -167,6 +171,17 @@ class SwarmRSMAController:
                         step_count, fsm.phase, payload_pos, finish_xy, 
                         avg_tension, current_cmd_z, target_drone_z, start_pos, fsm.hover_start_time
                     )
+
+                # Статус миссии для визуализации в RSMA (панель, уставка, маркеры)
+                if step_count % status_every == 0:
+                    self.client.publish("MissionStatus", MissionStatus(
+                        phase=fsm.phase,
+                        progress=float(min(1.0, max(0.0, 1.0 - dist_to_finish / total_dist))),
+                        distanceToFinish=float(dist_to_finish),
+                        setpoint=py_to_unity_v3(np.array([target_center_xy[0], target_center_xy[1], current_cmd_z])),
+                        finish=py_to_unity_v3(np.array([finish_xy[0], finish_xy[1], flight_z])),
+                        timestamp=now_ms
+                    ))
 
                 # Миссия завершена: даём дронам постоять 100 шагов и выходим, чтобы сохранить CSV
                 if fsm.phase == SwarmFlightPhase.FINISHED:

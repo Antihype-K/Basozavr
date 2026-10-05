@@ -1,3 +1,3 @@
 Код перенесён из https://gitlab.grimdark.ru/development/rsma-swarm-delivery-system (коммит 3e1bcc5, ветка main).
 Изменения относительно оригинала: исправлен control/anti_sway.py (см. docs/PYTHON_CONTROLLER_REVIEW.md), config.py (точка доставки = оранжевая площадка сцены 1),
-swarm_controller.py (завершение цикла после посадки), requirements.txt (UTF-8, без жёстких версий).
+swarm_controller.py (завершение цикла после посадки, публикация MissionStatus для визуализации в RSMA), requirements.txt (UTF-8, без жёстких версий).

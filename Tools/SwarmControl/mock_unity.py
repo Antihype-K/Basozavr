@@ -28,6 +28,7 @@ class World:
         self.released = [False] * n
         self.radius = radius
         self.payload = list(self.start)
+        self.status = {}
         self.lock = threading.Lock()
         self.hang = math.sqrt(cable ** 2 - radius ** 2)  # вертикальный размах троса под нагрузкой
 
@@ -71,12 +72,16 @@ def serve(world, port):
                         world.target[idx] = [d["position"]["x"], d["position"]["y"], d["position"]["z"]]
                     elif name.startswith("CableRelease") and d["value"] > 0.5:
                         world.released[idx] = True
+                    elif name == "MissionStatus":
+                        world.status = d
                     reply = json.dumps({"status": "ok"})
                 else:
                     if name.startswith("DronePose"):
                         inner = pose(world.pos[idx])
                     elif name == "PayloadPose":
                         inner = pose(world.payload)
+                    elif name == "MissionStatus":
+                        inner = world.status
                     elif name.startswith("CableForce"):
                         inner = {"value": world.tension(idx), "timestamp": 0}
                     else:

@@ -92,6 +92,10 @@ public class SwarmDeliveryScene : MonoBehaviour
         if (externalControl)
         {
             Debug.Log("[SwarmDelivery] Внешнее управление: встроенная миссия отключена, ждём Python-контроллер (порт 5555).");
+            // Живая визуализация в RSMA: статус миссии из Python, графики, след груза, маркер уставки
+            SwarmLiveView view = gameObject.GetComponent<SwarmLiveView>();
+            if (view == null) view = gameObject.AddComponent<SwarmLiveView>();
+            view.environment = environment;
             // Пока нет команд, дроны держат стартовую позицию (без команды Quadrocopter не создаёт тягу)
             foreach (Quadrocopter d in environment.droneInstances)
             {

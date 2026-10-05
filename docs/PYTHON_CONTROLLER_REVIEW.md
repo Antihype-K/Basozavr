@@ -53,6 +53,8 @@
 python Python/main.py
 python Python/visualize.py
 ```
+Визуализация внутри RSMA: контроллер публикует топик `MissionStatus`, `SwarmLiveView` в Unity рисует панель, графики, след груза и маркер уставки.
+
 Изменения относительно оригинала (`Python/UPSTREAM.txt`): исправлен `anti_sway.py`; `config.py` — точка доставки = оранжевая площадка
 сцены 1; `swarm_controller.py` — выход из цикла после посадки; `flight_state_machine.py` — посадка груза считается от высоты земли
 (в оригинале условие `payload_z ≤ 0,55` недостижимо: груз висит на 0,2 м выше уставки 0,5 м, фаза `LAND` не заканчивалась);

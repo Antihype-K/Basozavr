@@ -73,6 +73,11 @@ Builds\SwarmDeliveryWin\SwarmDelivery.exe
    python Python/main.py                                  # миссия: подъём, перенос на оранжевую площадку, посадка груза и дронов
    python Python/visualize.py                             # графики последнего полёта (из logs/)
    ```
+   **Визуализация в самой RSMA.** Пока работает Python, сцена показывает: панель «Python-контроллер» (фаза миссии, расстояние до
+   финиша, прогресс маршрута, высота и скорость груза, раскачка, натяжение), живые графики раскачки груза, натяжения тросов
+   (сумма / мин / макс) и высоты груза за последние 90 с, жёлтый след груза и бирюзовый шар-уставку, куда Python ведёт груз.
+   Статус публикует Python в топик `MissionStatus` (`Python/control/swarm_controller.py`), остальное считает Unity по физике
+   (`Assets/Scripts/UtilitiesForUnity/SwarmLiveView.cs`). `Python/visualize.py` остаётся для разбора CSV-логов после полёта.
    Встроенная миссия в этом режиме отключена, дроны держат позицию до первой команды Python. Параметры миссии — `Python/config.py`
    (`TARGET_OFFSET_X/Y` — смещение от базы до точки доставки, `CRUISE_ALTITUDE`, `V_MAX`, `K_SWAY/D_SWAY`).
    Подробности и найденные проблемы: `docs/PYTHON_CONTROLLER_REVIEW.md`.
