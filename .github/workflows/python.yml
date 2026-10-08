@@ -2,9 +2,9 @@ name: Python
 
 on:
   push:
-    paths: ["Python/**", ".github/workflows/python.yml"]
+    paths: ["Python/**", "Tools/NetMQHost/**", "Assets/Scripts/Apps/NetMQServer/**", "Assets/Scripts/uDTP/**", ".github/workflows/python.yml"]
   pull_request:
-    paths: ["Python/**", ".github/workflows/python.yml"]
+    paths: ["Python/**", "Tools/NetMQHost/**", "Assets/Scripts/Apps/NetMQServer/**", "Assets/Scripts/uDTP/**", ".github/workflows/python.yml"]
 
 jobs:
   test:
@@ -30,3 +30,28 @@ jobs:
       - run: pytest
         env:
           MPLBACKEND: Agg
+
+  # Python client against the real C# NetMQ server code (Tools/NetMQHost)
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            Python
+            Tools
+            Assets/Scripts/Apps/NetMQServer
+            Assets/Scripts/uDTP
+            .github
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet build Tools/NetMQHost -c Release -o Tools/NetMQHost/out
+      - run: pip install -r Python/requirements-dev.txt
+      - run: pytest tests/test_netmq_interop.py -v
+        working-directory: Python
+        env:
+          NETMQ_HOST: ${{ github.workspace }}/Tools/NetMQHost/out/NetMQHost.dll

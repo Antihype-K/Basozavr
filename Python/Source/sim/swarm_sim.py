@@ -6,7 +6,9 @@
 * дрон — Quadrocopter.cs: PID по позиции + компенсация веса, ограничение силы,
   линейное демпфирование Rigidbody;
 * трос — RSMACable.cs: пружина-демпфер, работает только на растяжение;
-* груз — Payload.prefab: точечная масса 12 кг, контакт с землей.
+* груз — Payload.prefab: точечная масса 12 кг, демпфирование, контакт с землей;
+* начальная расстановка — RSMASwarmEnvironment.cs: дроны в точках формации
+  на 0.2 м выше груза.
 
 Обмен идет через те же топики uDTP и в координатах Unity (Y — вверх),
 поэтому контроллер работает с моделью так же, как с настоящей сценой.
@@ -37,18 +39,18 @@ class DroneParams:  # Quadrocopter.cs
 
 
 @dataclass
-class CableParams:  # RSMACable.cs
+class CableParams:  # RSMACable.cs, значения из RSMASwarmEnvironment.cs
     rest_length: float = 2.0
     stiffness: float = 1000.0
     damping: float = 35.0
-    max_force: float = 200.0
+    max_force: float = 250.0
 
 
 @dataclass
-class PayloadParams:  # Payload.prefab
+class PayloadParams:  # Payload.prefab / RSMASwarmEnvironment.cs
     mass: float = 12.0
     ground_z: float = 0.25  # высота центра масс груза, стоящего на земле
-    air_drag: float = 0.05
+    linear_damping: float = 0.2  # Rigidbody.linearDamping
     ground_friction: float = 8.0
 
 
@@ -83,10 +85,9 @@ class SwarmPhysicsSim:
 
     @classmethod
     def around_payload(cls, broker: InMemoryBroker, payload_pos, offsets: dict[int, np.ndarray], **kwargs):
-        """Дроны стоят на земле вокруг груза в точках формации."""
+        """Дроны в точках формации на 0.2 м выше груза, как в RSMASwarmEnvironment.BuildSwarmScene()."""
         payload_pos = np.asarray(payload_pos, dtype=float)
-        ground = (kwargs.get("drone") or DroneParams()).ground_z
-        positions = {i: np.array([payload_pos[0] + off[0], payload_pos[1] + off[1], ground])
+        positions = {i: np.array([payload_pos[0] + off[0], payload_pos[1] + off[1], payload_pos[2] + 0.2])
                      for i, off in offsets.items()}
         return cls(broker, positions, payload_pos, **kwargs)
 
@@ -128,7 +129,7 @@ class SwarmPhysicsSim:
 
     def _substep(self, h: float) -> None:
         d, p = self.drone, self.payload
-        payload_force = np.array([0.0, 0.0, -p.mass * GRAVITY]) + self.wind - p.air_drag * self.payload_vel
+        payload_force = np.array([0.0, 0.0, -p.mass * GRAVITY]) + self.wind
 
         for i in self.ids:
             f_cable = self._cable(i)
@@ -155,6 +156,7 @@ class SwarmPhysicsSim:
             self.drone_vel[i], self.drone_pos[i] = vel, pos
 
         vel = self.payload_vel + payload_force / p.mass * h
+        vel /= 1.0 + p.linear_damping * h
         pos = self.payload_pos + vel * h
         if pos[2] <= p.ground_z:
             pos[2] = p.ground_z
