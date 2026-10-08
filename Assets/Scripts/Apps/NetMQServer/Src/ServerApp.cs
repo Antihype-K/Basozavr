@@ -21,6 +21,21 @@ namespace RSMA.GUI
         void Update()
         {
             NetMQServer.Update();
+            RefreshState();
+        }
+
+        // Сервер может остановиться сам (например, порт занят), поэтому статус берется из NetMQServer
+        private void RefreshState()
+        {
+            if (_stateText == null) return;
+
+            bool running = NetMQServer.IsRunning;
+            string text = running ? "Online" : "Offline";
+            if (_stateText.text != text)
+            {
+                _stateText.text = text;
+                _stateText.color = running ? Color.green : Color.red;
+            }
         }
 
         void OnApplicationQuit()
@@ -34,8 +49,7 @@ namespace RSMA.GUI
             {
                 NetMQServer.Stop();
                 Debug.Log("Stopping NetMQServer");
-                _stateText.text = "Offline";
-                _stateText.color = Color.red;
+                RefreshState();
                 return;
             }
             int port = 5555;
@@ -48,8 +62,7 @@ namespace RSMA.GUI
 
             NetMQServer.Run(port);
             Debug.Log($"Running NetMQServer on {port}");
-            _stateText.text = "Online";
-            _stateText.color = Color.green;
+            RefreshState();
         }
 
         protected override void Start() 

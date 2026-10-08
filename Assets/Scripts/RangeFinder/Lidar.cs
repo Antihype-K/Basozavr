@@ -24,13 +24,17 @@ public class Lidar : MonoBehaviour
 
     private float angleIncrement = 5;
 
-    private float[] ranges = new float[256];
+    private float[] ranges = new float[(int)ScanSize.LaserScan256];
 
 
     [ContextMenu("MeasureRange")]
     // Измените метод Start и MeasureRange в Unity:
     private void MeasureRange()
     {
+        // Длина массива должна совпадать с размером скана (128 или 256 значений)
+        if (ranges.Length != (int)scanSize)
+            ranges = new float[(int)scanSize];
+
         angleIncrement = (angleMax - angleMin) / ((int)scanSize - 1);
 
         for (int rayIndex = 0; rayIndex < (int)scanSize; rayIndex++)
@@ -54,6 +58,7 @@ public class Lidar : MonoBehaviour
     private void Start()
     {
         gameObject.layer = 2;
+        ranges = new float[(int)scanSize];
 
         angleIncrement = (angleMax - angleMin) / ((int)scanSize - 1);
 
@@ -91,16 +96,21 @@ public class Lidar : MonoBehaviour
     private void Update()
     {
         MeasureRange();
+
+        // Публикуем копию: опубликованный массив читает поток NetMQ сервера,
+        // а ranges перезаписывается на следующем кадре
+        float[] snapshot = (float[])ranges.Clone();
+
         if (scanSize == ScanSize.LaserScan128)
         {
             scan128.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            scan128.ranges = ranges;
+            scan128.ranges = snapshot;
             DataBroker.Publish(topicName, scan128);
         }
         else 
         {
             scan256.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            scan256.ranges = ranges;
+            scan256.ranges = snapshot;
             DataBroker.Publish(topicName, scan256);
         }
     }

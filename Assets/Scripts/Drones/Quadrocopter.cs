@@ -115,9 +115,16 @@ public class Quadrocopter : MonoBehaviour
 
         float propVelocity = propMaxVelocity * (force.magnitude / maxForce);
 
-        propeller1.transform.Rotate(new Vector3(0, 0, -propVelocity) * Time.fixedDeltaTime);
-        propeller2.transform.Rotate(new Vector3(0, 0, propVelocity) * Time.fixedDeltaTime);
-        propeller3.transform.Rotate(new Vector3(0, 0, propVelocity) * Time.fixedDeltaTime);
-        propeller4.transform.Rotate(new Vector3(0, 0, -propVelocity) * Time.fixedDeltaTime);
+        RotatePropeller(propeller1, -propVelocity);
+        RotatePropeller(propeller2, propVelocity);
+        RotatePropeller(propeller3, propVelocity);
+        RotatePropeller(propeller4, -propVelocity);
+    }
+
+    // Пропеллеров может не быть (например, дрон из примитива в RSMASwarmEnvironment)
+    private void RotatePropeller(GameObject propeller, float velocity)
+    {
+        if (propeller != null)
+            propeller.transform.Rotate(new Vector3(0, 0, velocity) * Time.fixedDeltaTime);
     }
 }

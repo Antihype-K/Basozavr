@@ -1,4 +1,4 @@
-﻿using System.Collections;
+﻿﻿using System.Collections;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Net;
@@ -43,6 +43,7 @@ public class SocketServer
     public SocketServer() { }
     public SocketServer(string serverIP, int serverPort)
     {
+        this.serverIP = serverIP;
         this.serverPort = serverPort;
     }
 
@@ -103,12 +104,10 @@ public class SocketServer
         catch(Exception ex)
         {
             RSMALogger.Logger.Log(ex.Message);
+            listener.Close();
             return;
         }
-        finally 
-        {
-            RSMALogger.Logger.Log("Server: Successfully binded the port");
-        }
+        RSMALogger.Logger.Log("Server: Successfully binded the port");
         
         listener.Listen(100);
 
@@ -126,7 +125,7 @@ public class SocketServer
     /// </summary>
     public void Stop()
     {
-        if (isStarted)
+        if (!isStarted)
         {
             RSMALogger.Logger.Log("Server: Server NOT started");
             return;

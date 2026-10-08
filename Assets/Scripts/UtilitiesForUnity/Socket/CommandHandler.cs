@@ -10,6 +10,28 @@ public static class CommandHandler
 
     public static string Execute(string command)
     {
+        try
+        {
+            return ExecuteCommand(command);
+        }
+        catch (System.FormatException)
+        {
+            return $"Invalid number in command \"{command}\"";
+        }
+        catch (System.OverflowException)
+        {
+            return $"Number out of range in command \"{command}\"";
+        }
+    }
+
+    private static string F(float value)
+    {
+        // Ответы разбирают внешние клиенты: десятичный разделитель не должен зависеть от локали
+        return value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string ExecuteCommand(string command)
+    {
         command = command.Replace(',', '.');
 
         var splited = command.Split(' ');
@@ -43,7 +65,7 @@ public static class CommandHandler
                     return "Stopping server";
 
                 case "server_send":
-                    if (splited.Length > 1)
+                    if (splited.Length > 2)
                     {
                         string client = splited[1];
                         string message = splited[2];
@@ -94,7 +116,7 @@ public static class CommandHandler
                         objectManager.InstantiateWall(start, end, height, width);
                         return $"Done";
                     }
-                    return "Invalid argument for marker";
+                    return "Invalid argument for wall";
 
                 case "robot":
                     if (splited.Length > 7)
@@ -137,7 +159,7 @@ public static class CommandHandler
                         string pin = splited[3];
 
                         float value = objectManager.GPIORead(id, port, pin);
-                        return  $"<|GPIO|>{id}<|s|>{port}<|s|>{pin}<|s|>{value}";
+                        return $"<|GPIO|>{id}<|s|>{port}<|s|>{pin}<|s|>{F(value)}";
                     }
                     return "Invalid argument for gpio_read";
 
@@ -250,8 +272,8 @@ public static class CommandHandler
                         Vector3 position = transform.position;
                         Vector3 rotation = transform.rotation.eulerAngles;
 
-                        return $"<|Transform|>{id}<|s|>{position.x}<|s|>{position.y}<|s|>{position.z}" +
-                            $"<|s|>{rotation.x}<|s|>{rotation.y}<|s|>{rotation.z}";
+                        return $"<|Transform|>{id}<|s|>{F(position.x)}<|s|>{F(position.y)}<|s|>{F(position.z)}" +
+                            $"<|s|>{F(rotation.x)}<|s|>{F(rotation.y)}<|s|>{F(rotation.z)}";
                     }
                     return "Invalid argument for controller_position";
 

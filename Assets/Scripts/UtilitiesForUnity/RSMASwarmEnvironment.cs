@@ -45,6 +45,13 @@ public class RSMASwarmEnvironment : MonoBehaviour
 
         payloadRb.linearDamping = 0.2f;
 
+        // Python-контур управления ждет телеметрию груза в топике PayloadPose
+        // (в Payload.prefab публикатор уже есть, у примитива его нет)
+        if (payloadInstance.GetComponent<TransformPublisher>() == null)
+        {
+            payloadInstance.AddComponent<TransformPublisher>().topicName = "PayloadPose";
+        }
+
         // 2. Генерация дронов по кругу
         float angleStep = 360.0f / numDrones;
         float angleOffset = (numDrones == 4) ? 45.0f : 0.0f;

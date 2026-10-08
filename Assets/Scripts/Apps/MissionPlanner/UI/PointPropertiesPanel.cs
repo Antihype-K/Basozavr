@@ -1,5 +1,6 @@
 using RSMA.GUI;
 using RSMA.MissionPlanner.Core;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -153,10 +154,10 @@ namespace RSMA.MissionPlanner.UI
             _pointIndexText.text = $"Point #{index + 1}";
             _pointCountText.text = $"Total: {manager.Points.Count} points";
 
-            _xInput.text = point.position.x.ToString("F2");
-            _yInput.text = point.position.y.ToString("F2");
-            _zInput.text = point.position.z.ToString("F2");
-            _velocityInput.text = point.targetVelocity.ToString("F2");
+            _xInput.text = point.position.x.ToString("F2", CultureInfo.InvariantCulture);
+            _yInput.text = point.position.y.ToString("F2", CultureInfo.InvariantCulture);
+            _zInput.text = point.position.z.ToString("F2", CultureInfo.InvariantCulture);
+            _velocityInput.text = point.targetVelocity.ToString("F2", CultureInfo.InvariantCulture);
 
             _isUpdating = false;
         }
@@ -182,7 +183,7 @@ namespace RSMA.MissionPlanner.UI
         private void OnVelocityChanged(string value)
         {
             if (_isUpdating || _currentIndex < 0) return;
-            if (float.TryParse(value, out float vel))
+            if (TryParseFloat(value, out float vel))
             {
                 MissionManager.Instance?.UpdatePoint(_currentIndex, velocity: vel);
             }
@@ -192,12 +193,20 @@ namespace RSMA.MissionPlanner.UI
         {
             if (_currentIndex < 0) return;
 
-            if (float.TryParse(x, out float fx) &&
-                float.TryParse(y, out float fy) &&
-                float.TryParse(z, out float fz))
+            if (TryParseFloat(x, out float fx) &&
+                TryParseFloat(y, out float fy) &&
+                TryParseFloat(z, out float fz))
             {
                 MissionManager.Instance?.UpdatePoint(_currentIndex, position: new Vector3(fx, fy, fz));
             }
+        }
+
+        // Принимает и "1.5", и "1,5" независимо от локали системы
+        private static bool TryParseFloat(string value, out float result)
+        {
+            result = 0f;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            return float.TryParse(value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out result);
         }
 
         public void SetActive(bool active)

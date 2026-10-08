@@ -150,6 +150,13 @@ public class PX4Quadrocopter : MonoBehaviour
         }
     }
 
+    // Высота MSL: homeAltitudeMSL соответствует точке старта, как и в HIL_GPS
+    // (раньше HIL_STATE и барометр брали абсолютный Y сцены и расходились с GPS на высоту спавна)
+    private float AltitudeMSL()
+    {
+        return homeAltitudeMSL + (transform.position.y - initialPositionWorld.y);
+    }
+
     private void PublishHILStateData(long timestampUs)
     {
         stateMsg.timestamp = timestampUs;
@@ -176,7 +183,7 @@ public class PX4Quadrocopter : MonoBehaviour
 
         stateMsg.lat = (int)(lat * 1e7);
         stateMsg.lon = (int)(lon * 1e7);
-        stateMsg.alt = (int)((homeAltitudeMSL + transform.position.y) * 1000f);
+        stateMsg.alt = (int)(AltitudeMSL() * 1000f);
 
         DataBroker.Publish($"HILStateQuaternion_{droneId}", stateMsg);
     }
@@ -211,7 +218,7 @@ public class PX4Quadrocopter : MonoBehaviour
         sensorMsg.mag_z = magBodyFRD.z + UnityEngine.Random.Range(-magNoiseFactor, magNoiseFactor);
 
         // 4. Барометр
-        float alt = homeAltitudeMSL + transform.position.y;
+        float alt = AltitudeMSL();
         float noisyAlt = alt + UnityEngine.Random.Range(-0.5f, 0.5f);
 
         sensorMsg.pressure_alt = noisyAlt;

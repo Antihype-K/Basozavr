@@ -20,6 +20,8 @@ public class TransformWriter : MonoBehaviour
     [ContextMenu("Start writing")]
     public void Write()
     {
+        if (isWriting) return;
+
         string path = Application.dataPath + "/" + fileName + ".csv";
 
         if (!File.Exists(path))
@@ -44,8 +46,8 @@ public class TransformWriter : MonoBehaviour
     [ContextMenu("Stop writing")]
     public void Stop()
     {
+        // Корутина сама завершит цикл и закроет файл; StopCoroutine оставлял файл незакрытым
         isWriting = false;
-        StopCoroutine("WriteTransforms");
     }
 
     public IEnumerator WriteTransforms()
@@ -62,7 +64,8 @@ public class TransformWriter : MonoBehaviour
             foreach (WritableTransform target in targetTransforms)
             {
                 line += $";{target.transform.position.x};{target.transform.position.y};{target.transform.position.z};{time};";
-                chart.UpdateChart(target.transform.position.y, time);
+                if (chart != null)
+                    chart.UpdateChart(target.transform.position.y, time);
             }
 
             textWriter.WriteLine(line);

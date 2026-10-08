@@ -16,7 +16,9 @@ namespace RSMA.NetMQ
 {
     public static class NetMQServer
     {
-        private static bool _isRunning;
+        private static volatile bool _isRunning;
+        private static Task _serverTask;
+        private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromMilliseconds(100);
         private static readonly Queue<Action> _actionQueue = new Queue<Action>();
         private static readonly object _queueLock = new object();
 
@@ -43,61 +45,89 @@ namespace RSMA.NetMQ
             Application.quitting += () =>
             {
                 Stop();
+                // Даем циклу сервера закрыть сокет, иначе выход из приложения может зависнуть
+                _serverTask?.Wait(500);
             };
         }
 
         public static void Run(int serverPort = 5555)
         {
             if (_isRunning) return;
-            _isRunning = true;
 
-            Task.Run(() => ServerLoop(serverPort));
+            // Предыдущий цикл мог еще не освободить порт
+            _serverTask?.Wait(1000);
+
+            _isRunning = true;
+            _serverTask = Task.Run(() => ServerLoop(serverPort));
         }
 
+        /// <summary>
+        /// Останавливает сервер. Цикл завершится в течение ReceiveTimeout и сам освободит порт.
+        /// </summary>
         public static void Stop()
         {
             _isRunning = false;
-            NetMQConfig.Cleanup();
         }
 
         private static void ServerLoop(int serverPort)
         {
-            AsyncIO.ForceDotNet.Force();
-            using (var server = new RouterSocket())
+            try
             {
-                server.Bind($"tcp://*:{serverPort}");
-
-                while (_isRunning)
+                AsyncIO.ForceDotNet.Force();
+                using (var server = new RouterSocket())
                 {
-                    // Router сообщение в формате: [Identity, EmptyFrame, Data]
-                    var message = server.ReceiveMultipartMessage();
+                    server.Bind($"tcp://*:{serverPort}");
 
-                    if (message.FrameCount >= 3)
+                    NetMQMessage message = null;
+                    while (_isRunning)
                     {
+                        // Ждем с таймаутом, чтобы Stop() срабатывал без входящих сообщений
+                        if (!server.TryReceiveMultipartMessage(ReceiveTimeout, ref message))
+                            continue;
+
+                        // Router сообщение в формате: [Identity, EmptyFrame, Data]
+                        if (message.FrameCount < 3)
+                            continue;
+
                         var clientIdentity = message[0];
-                        byte[] rawBytes = message[2].ToByteArray();
+                        byte[] rawBytes = message[message.FrameCount - 1].ToByteArray();
                         string payload = Encoding.UTF8.GetString(rawBytes).Trim();
 
                         string response = ProcessCommand(payload);
                         byte[] responseBytes = Encoding.UTF8.GetBytes(response);
 
                         // Отправляем ответ обратно тому же клиенту
-                        server.SendMultipartMessage(new NetMQMessage(new[] 
-                        { 
-                            clientIdentity, 
-                            NetMQFrame.Empty, 
-                            new NetMQFrame(responseBytes) 
+                        server.SendMultipartMessage(new NetMQMessage(new[]
+                        {
+                            clientIdentity,
+                            NetMQFrame.Empty,
+                            new NetMQFrame(responseBytes)
                         }));
                     }
                 }
             }
-            NetMQConfig.Cleanup();
+            catch (Exception ex)
+            {
+                // Например, порт занят: без этого исключение терялось в Task, а UI показывал "Online"
+                _isRunning = false;
+                string error = ex.Message;
+                EnqueueAction(() => Debug.LogError($"[NetMQServer] Server stopped: {error}"));
+            }
+            finally
+            {
+                NetMQConfig.Cleanup(false);
+            }
+        }
+
+        private static string ErrorJson(string message)
+        {
+            return JsonConvert.SerializeObject(new NetworkResponse { Status = "error", Message = message }, JsonSettings);
         }
 
         private static string ProcessCommand(string command)
         {
             if (string.IsNullOrWhiteSpace(command))
-                return "{\"status\":\"error\",\"message\":\"Empty payload\"}";
+                return ErrorJson("Empty payload");
 
             if (command.Trim().StartsWith("{") && command.Trim().EndsWith("}"))
             {
@@ -172,7 +202,7 @@ namespace RSMA.NetMQ
 
                 if (topicType == null)
                 {
-                    return $"{{\"status\":\"error\",\"message\":\"Type '{packet.TopicType}'\"}}";
+                    return ErrorJson($"Type '{packet.TopicType}' not found");
                 }
 
                 if (packet.Action == "publish")
@@ -187,7 +217,7 @@ namespace RSMA.NetMQ
                     // DataBroker.Publish<TargetType>(packet.TopicName, deserializedData)
                     publishMethod.Invoke(null, new object[] { packet.TopicName, deserializedData });
 
-                    return "{\"status\":\"ok\"}";
+                    return JsonConvert.SerializeObject(new NetworkResponse { Status = "ok" }, JsonSettings);
                 }
 
                 else if (packet.Action == "get")
@@ -209,9 +239,9 @@ namespace RSMA.NetMQ
             {
                 // Если ошибка произошла внутри Invoke, реальное исключение будет в InnerException
                 string errorMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                return $"{{\"status\":\"error\",\"message\":\"Reflection error: {errorMsg}\"}}";
+                return ErrorJson($"Reflection error: {errorMsg}");
             }
-            return $"{{\"status\":\"error\",\"message\":\"Type 'Unknown'\"}}";
+            return ErrorJson($"Unknown action '{packet.Action}'");
         }
     }
 }

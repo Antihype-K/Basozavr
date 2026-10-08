@@ -60,7 +60,8 @@ public class RSMACable : MonoBehaviour
 
     void FixedUpdate()
     {
-        if (mainBody == null || connectedBody == null) return;
+        // До InitializeCable() трос не активен (нет LineRenderer и топика)
+        if (mainBody == null || connectedBody == null || lineRenderer == null) return;
 
         // 1. Отрисовка троса между центрами масс дрона и груза
         lineRenderer.SetPosition(0, mainBody.position);
