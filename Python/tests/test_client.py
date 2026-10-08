@@ -86,3 +86,36 @@ def test_local_client_matches_server_semantics():
     c.publish("PayloadPose", Pose(timestamp=5))
     assert is_published(c.get_state("PayloadPose", Pose))
     assert c.publish("x", Float32(), topic_type="Nope")["status"] == "error"
+
+
+def test_batch_get_and_publish(client):
+    results = client.publish_many([("A", Float32(value=1.0, timestamp=1)), ("B", Pose(timestamp=2))])
+    assert results == [{"status": "ok"}, {"status": "ok"}]
+    a, b, missing = client.get_states([("A", Float32), ("B", Pose), ("PayloadPose", Pose)])
+    assert client.supports_batch is True
+    assert a.value == 1.0 and b.timestamp == 2 and not is_published(missing)
+
+
+def test_batch_item_errors_do_not_break_others(client):
+    class Unknown:
+        pass
+
+    ok, bad = client.get_states([("A", Float32), ("A", Unknown)])
+    assert ok is not None and bad is None
+    assert "not found" in client.last_error
+
+
+def test_batch_falls_back_on_old_server():
+    with MockServer(port=0, host="127.0.0.1", supports_batch=False) as server:
+        with RSMAClient(host="127.0.0.1", port=server.port, timeout=2000) as c:
+            assert c.publish_many([("A", Float32(value=3.0, timestamp=1))]) == [{"status": "ok"}]
+            assert c.supports_batch is False
+            assert c.get_states([("A", Float32)])[0].value == 3.0
+
+
+def test_batch_uses_one_round_trip(client, server, monkeypatch):
+    calls = []
+    original = client._request
+    monkeypatch.setattr(client, "_request", lambda payload: calls.append(payload) or original(payload))
+    client.get_states([(f"CableForce_{i}", Float32) for i in range(1, 7)])
+    assert len(calls) == 1

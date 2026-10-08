@@ -157,3 +157,40 @@ def test_fsm_drone_setpoint_is_rate_limited():
     fsm = make_fsm()
     fsm.update(0.25, DT, None)
     assert fsm.target_drone_z - 0.25 <= 2 * fsm.climb_rate * DT + 1e-9
+
+
+class _NoFlagTrajectory:
+    """Generator without is_finished: FSM falls back to the distance tolerance."""
+
+    def __init__(self, points):
+        self.points = list(points)
+
+    def update(self, dt):
+        return self.points.pop(0) if len(self.points) > 1 else self.points[0]
+
+
+def test_fsm_waits_for_trajectory_completion():
+    traj = JerkLimitedTrajectory([0, 0, 3], [10, 0, 3], v_max=1.0, a_max=1.0, j_max=2.0)
+    fsm = make_fsm()
+    fsm.phase = SwarmFlightPhase.TRAJECTORY
+    prev = None
+    while fsm.phase == SwarmFlightPhase.TRAJECTORY:
+        center, _ = fsm.update(3.0, DT, traj)
+        if prev is not None:
+            # no set-point jump, including the step that switches to HOVER
+            assert np.linalg.norm(center - prev) <= 1.0 * DT + 1e-9
+        prev = center
+    assert traj.is_finished
+    np.testing.assert_allclose(prev, [10, 0])
+    center, _ = fsm.update(3.0, DT, traj)
+    assert np.linalg.norm(center - prev) < 1e-9
+
+
+def test_fsm_distance_tolerance_for_generators_without_flag():
+    fsm = make_fsm(finish_tolerance=0.3)
+    fsm.phase = SwarmFlightPhase.TRAJECTORY
+    traj = _NoFlagTrajectory([[9.0, 0, 3], [9.8, 0, 3]])
+    fsm.update(3.0, DT, traj)
+    assert fsm.phase == SwarmFlightPhase.TRAJECTORY
+    fsm.update(3.0, DT, traj)
+    assert fsm.phase == SwarmFlightPhase.HOVER

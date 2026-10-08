@@ -20,9 +20,12 @@ log = logging.getLogger("RSMA.MockServer")
 
 
 class MockServer:
-    def __init__(self, port: int = 5555, host: str = "*", broker: InMemoryBroker | None = None):
+    def __init__(self, port: int = 5555, host: str = "*", broker: InMemoryBroker | None = None,
+                 supports_batch: bool = True):
+        """supports_batch=False emulates an older Unity build without the "batch" action."""
         self.endpoint = f"tcp://{host}:{port}"
         self.broker = broker or InMemoryBroker()
+        self.supports_batch = supports_batch
         self.messages: list[str] = []  # PrintMessage log
         self.restart_count = 0
 
@@ -53,6 +56,8 @@ class MockServer:
             if isinstance(packet, dict):
                 action = packet.get("Action") or packet.get("action")
                 topic_type = packet.get("TopicType") or packet.get("topicType")
+                if action == "batch" and self.supports_batch:
+                    return self._process_batch(packet.get("Data") or packet.get("data"))
                 if action and topic_type:
                     return self._process_broker_command(packet, action, topic_type)
 
@@ -67,6 +72,21 @@ class MockServer:
         if command.startswith("GetServerStatus"):
             return "OK: Server is running"
         return f"Error: Unknown command '{command}'"
+
+    def _process_batch(self, data: str | None) -> str:
+        try:
+            packets = json.loads(data or "[]")
+        except json.JSONDecodeError as e:
+            return json.dumps({"status": "error", "message": f"Bad batch: {e}"})
+        responses = []
+        for packet in packets if isinstance(packets, list) else []:
+            action = isinstance(packet, dict) and packet.get("Action")
+            topic_type = isinstance(packet, dict) and packet.get("TopicType")
+            if not action or not topic_type:
+                responses.append(json.dumps({"status": "error", "message": "Batch item must have Action and TopicType"}))
+            else:
+                responses.append(self._process_broker_command(packet, action, topic_type))
+        return json.dumps({"status": "ok", "data": json.dumps(responses)})
 
     def _process_broker_command(self, packet: dict, action: str, topic_type: str) -> str:
         topic_name = packet.get("TopicName") or packet.get("topicName") or ""

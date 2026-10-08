@@ -85,6 +85,12 @@ class SwarmRSMAController:
         self.step_count = 0
         self._sway_active = False
 
+        # Контроль «замерзшей» телеметрии (Unity на паузе, сцена упала, потеря связи)
+        self.telemetry_timeout: float = self._param("TELEMETRY_TIMEOUT", 1.0)
+        self.telemetry_age = 0.0
+        self.telemetry_stale = False
+        self._last_payload_ts: int | None = None
+
     def _param(self, name: str, default):
         return getattr(self.cfg, name, default)
 
@@ -106,11 +112,26 @@ class SwarmRSMAController:
 
     def get_cables_forces(self) -> dict[int, float]:
         """Считывает силы натяжения каждого троса."""
-        forces = {}
-        for d_id in range(1, self.num_drones + 1):
-            msg = self.client.get_state(cable_force_topic(d_id), Float32)
-            forces[d_id] = float(msg.value) if msg is not None else 0.0
-        return forces
+        ids = range(1, self.num_drones + 1)
+        msgs = self.client.get_states([(cable_force_topic(d_id), Float32) for d_id in ids])
+        return {d_id: float(msg.value) if msg is not None else 0.0 for d_id, msg in zip(ids, msgs, strict=True)}
+
+    def read_telemetry(self) -> tuple[Pose | None, dict[int, Pose | None], dict[int, float]]:
+        """
+        Вся телеметрия шага одним пакетным запросом: груз, дроны, тросы.
+        Для дронов/груза возвращается None, если топик еще не публиковался.
+        """
+        ids = list(range(1, self.num_drones + 1))
+        requests = [(PAYLOAD_TOPIC, Pose)]
+        requests += [(drone_pose_topic(d_id), Pose) for d_id in ids]
+        requests += [(cable_force_topic(d_id), Float32) for d_id in ids]
+        results = self.client.get_states(requests)
+
+        payload = results[0] if is_published(results[0]) else None
+        drones = {d_id: (msg if is_published(msg) else None) for d_id, msg in zip(ids, results[1:1 + len(ids)], strict=True)}
+        forces = {d_id: float(msg.value) if msg is not None else 0.0
+                  for d_id, msg in zip(ids, results[1 + len(ids):], strict=True)}
+        return payload, drones, forces
 
     def wait_for_payload(self, timeout: float | None = None, poll_interval: float = 0.02) -> np.ndarray | None:
         """Ждет первую телеметрию груза. Возвращает позицию или None по таймауту."""
@@ -161,6 +182,9 @@ class SwarmRSMAController:
             self.csv_logger = CSVLogger(num_drones=self.num_drones, log_dir=self._param("LOG_DIR", "logs"))
         self.step_count = 0
         self._sway_active = False
+        self.telemetry_age = 0.0
+        self.telemetry_stale = False
+        self._last_payload_ts = None
 
         log.info("Старт миссии! Исходная позиция груза: %s, точка доставки: %s. Фаза: LIFT",
                  np.round(self.start_pos, 3), np.round(finish_xy, 3))
@@ -172,28 +196,33 @@ class SwarmRSMAController:
         fsm = self.fsm
         self.step_count += 1
 
-        # 1. Телеметрия груза (если пакет потерян — используем последнюю известную позицию)
-        pos = self.read_payload_position()
-        if pos is not None:
-            self.payload_pos = pos
+        # 1. Телеметрия (если пакет потерян — используем последнюю известную позицию груза)
+        payload_msg, drone_msgs, cables_forces = self.read_telemetry()
+        if payload_msg is not None:
+            self.payload_pos = unity_to_py_v3(payload_msg.position)
         payload_pos = self.payload_pos
+        self._update_telemetry_age(payload_msg, dt)
 
-        # 2. Переключение автомата состояний
-        target_center_xy, current_cmd_z = fsm.update(payload_pos[2], dt, self.traj)
+        # 2. Переключение автомата состояний. Пока телеметрия не обновляется,
+        #    миссия стоит на месте: уставки не двигаются, таймеры не идут.
+        fsm_dt = 0.0 if self.telemetry_stale else dt
+        target_center_xy, current_cmd_z = fsm.update(payload_pos[2], fsm_dt, self.traj)
         target_drone_z = fsm.target_drone_z
 
         # 3. Anti-Sway работает только в полете по траектории
-        sway_active = self.use_anti_sway and fsm.phase == SwarmFlightPhase.TRAJECTORY
+        sway_active = self.use_anti_sway and fsm.phase == SwarmFlightPhase.TRAJECTORY and not self.telemetry_stale
         if sway_active and not self._sway_active:
             for ctrl in self.anti_sways.values():
                 ctrl.reset()
         self._sway_active = sway_active
 
-        # 4. Команды дронам и считывание телеметрии дронов
+        # 4. Команды дронам
         now_ms = get_unix_time_milliseconds()
         drones_positions = {}
+        commands = []
         for d_id in range(1, self.num_drones + 1):
-            d_pos = self.read_drone_position(d_id)
+            d_msg = drone_msgs.get(d_id)
+            d_pos = unity_to_py_v3(d_msg.position) if d_msg is not None else None
             if d_pos is None:
                 d_pos = payload_pos + self.offsets[d_id] + np.array([0.0, 0.0, self.hang_height])
             drones_positions[d_id] = d_pos
@@ -210,14 +239,14 @@ class SwarmRSMAController:
                 target_drone_z,
             ])
 
-            self.client.publish(drone_target_topic(d_id), Pose(
+            commands.append((drone_target_topic(d_id), Pose(
                 position=py_to_unity_v3(target_pos_py),
                 rotation=Quaternion.identity(),
                 timestamp=now_ms,
-            ))
+            )))
+        self.client.publish_many(commands)
 
-        # 5. Сбор телеметрии натяжения тросов
-        cables_forces = self.get_cables_forces()
+        # 5. Натяжение тросов
         avg_tension = float(np.mean(list(cables_forces.values()))) if cables_forces else 0.0
         dist_to_finish = float(np.linalg.norm(payload_pos[:2] - fsm.finish_xy))
 
@@ -243,6 +272,22 @@ class SwarmRSMAController:
             TelemetryLogger.log_status(self.step_count, fsm, payload_pos, avg_tension, self.start_pos)
 
         return fsm.phase
+
+    def _update_telemetry_age(self, payload_msg: Pose | None, dt: float) -> None:
+        ts = payload_msg.timestamp if payload_msg is not None else None
+        if ts is not None and ts != self._last_payload_ts:
+            self._last_payload_ts = ts
+            self.telemetry_age = 0.0
+        else:
+            self.telemetry_age += dt
+
+        stale = self.telemetry_timeout > 0 and self.telemetry_age > self.telemetry_timeout
+        if stale and not self.telemetry_stale:
+            log.warning("Телеметрия груза не обновляется %.1f с — миссия приостановлена, дроны держат позицию",
+                        self.telemetry_age)
+        elif self.telemetry_stale and not stale:
+            log.info("Телеметрия восстановлена — миссия продолжается")
+        self.telemetry_stale = stale
 
     def finish(self) -> None:
         if self.csv_logger is not None:

@@ -135,6 +135,11 @@ namespace RSMA.NetMQ
                 {
                     var packet = JsonConvert.DeserializeObject<NetworkPacket>(command);
 
+                    if (packet != null && packet.Action == "batch")
+                    {
+                        return ProcessBatch(packet.Data);
+                    }
+
                     if (packet != null && !string.IsNullOrEmpty(packet.Action) && !string.IsNullOrEmpty(packet.TopicType))
                     {
                         return ProcessBrokerCommand(packet);
@@ -184,51 +189,108 @@ namespace RSMA.NetMQ
         // Метод, который нужно вызывать в Update любого MonoBehaviour
         public static void Update()
         {
+            // Забираем действия под замком, а выполняем без него: действие может само вызвать
+            // EnqueueAction, а исключение в одном действии не должно терять остальные
+            Action[] actions;
             lock (_queueLock)
             {
-                while (_actionQueue.Count > 0)
+                if (_actionQueue.Count == 0) return;
+                actions = _actionQueue.ToArray();
+                _actionQueue.Clear();
+            }
+
+            foreach (var action in actions)
+            {
+                try
                 {
-                    _actionQueue.Dequeue().Invoke();
+                    action.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[NetMQServer] Action failed: {ex}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Несколько команд брокера за один запрос: Data — JSON-массив пакетов
+        /// (как у publish/get). Ответ: data — JSON-массив ответов на каждый пакет по порядку.
+        /// Экономит сетевые round-trip: клиент управления роем делает 2 запроса за шаг вместо 19.
+        /// </summary>
+        private static string ProcessBatch(string data)
+        {
+            List<NetworkPacket> packets;
+            try
+            {
+                packets = JsonConvert.DeserializeObject<List<NetworkPacket>>(data ?? "[]");
+            }
+            catch (Exception ex)
+            {
+                return ErrorJson($"Bad batch: {ex.Message}");
+            }
+
+            var responses = new List<string>(packets?.Count ?? 0);
+            if (packets != null)
+            {
+                foreach (var packet in packets)
+                {
+                    if (packet == null || string.IsNullOrEmpty(packet.Action) || string.IsNullOrEmpty(packet.TopicType))
+                        responses.Add(ErrorJson("Batch item must have Action and TopicType"));
+                    else
+                        responses.Add(ProcessBrokerCommand(packet));
+                }
+            }
+
+            return JsonConvert.SerializeObject(
+                new NetworkResponse { Status = "ok", Data = JsonConvert.SerializeObject(responses) }, JsonSettings);
+        }
+
+        // Кэш рефлексии: тип топика и generic-методы DataBroker ищутся один раз на тип.
+        // Используется только из потока сервера.
+        private static readonly Dictionary<string, (Type type, MethodInfo publish, MethodInfo get)> _topicCache =
+            new Dictionary<string, (Type, MethodInfo, MethodInfo)>();
+
+        private static bool TryGetTopic(string topicTypeName, out (Type type, MethodInfo publish, MethodInfo get) topic)
+        {
+            if (_topicCache.TryGetValue(topicTypeName, out topic))
+                return true;
+
+            Type topicType = Type.GetType("RSMA.uDTP.Topics." + topicTypeName);
+            if (topicType == null)
+                return false;
+
+            var flags = BindingFlags.Public | BindingFlags.Static;
+            topic = (
+                topicType,
+                typeof(RSMA.uDTP.DataBroker).GetMethod("Publish", flags).MakeGenericMethod(topicType),
+                typeof(RSMA.uDTP.DataBroker).GetMethod("GetState", flags).MakeGenericMethod(topicType));
+            _topicCache[topicTypeName] = topic;
+            return true;
         }
 
         private static string ProcessBrokerCommand(NetworkPacket packet)
         {
             try
             {
-                string fullTypeName = "RSMA.uDTP.Topics." + packet.TopicType;
-                Type topicType = Type.GetType(fullTypeName);
-
-                if (topicType == null)
+                if (!TryGetTopic(packet.TopicType, out var topic))
                 {
                     return ErrorJson($"Type '{packet.TopicType}' not found");
                 }
 
                 if (packet.Action == "publish")
                 {
-                    object deserializedData = JsonConvert.DeserializeObject(packet.Data, topicType, JsonSettings);
-
-                    // Получаем generic-метод DataBroker.Publish<T>
-                    MethodInfo publishMethod = typeof(RSMA.uDTP.DataBroker)
-                        .GetMethod("Publish", BindingFlags.Public | BindingFlags.Static)
-                        .MakeGenericMethod(topicType);
+                    object deserializedData = JsonConvert.DeserializeObject(packet.Data, topic.type, JsonSettings);
 
                     // DataBroker.Publish<TargetType>(packet.TopicName, deserializedData)
-                    publishMethod.Invoke(null, new object[] { packet.TopicName, deserializedData });
+                    topic.publish.Invoke(null, new object[] { packet.TopicName, deserializedData });
 
                     return JsonConvert.SerializeObject(new NetworkResponse { Status = "ok" }, JsonSettings);
                 }
 
                 else if (packet.Action == "get")
                 {
-                    // Через рефлексию получаем generic-метод DataBroker.GetState<T>
-                    MethodInfo getMethod = typeof(RSMA.uDTP.DataBroker)
-                        .GetMethod("GetState", BindingFlags.Public | BindingFlags.Static)
-                        .MakeGenericMethod(topicType);
-
-                    // Вызываем: DataBroker.GetState<TargetType>(packet.TopicName)
-                    object state = getMethod.Invoke(null, new object[] { packet.TopicName });
+                    // DataBroker.GetState<TargetType>(packet.TopicName)
+                    object state = topic.get.Invoke(null, new object[] { packet.TopicName });
 
                     // Сериализуем полученный объект (даже если он default/null) back to JSON
                     string dataJson = JsonConvert.SerializeObject(state, JsonSettings);

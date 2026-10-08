@@ -94,6 +94,12 @@ class LocalClient:
             return None
         return RSMASerializer.from_dict(target_class, json.loads(json.dumps(data)))
 
+    def get_states(self, requests: list[tuple[str, type]]) -> list[Any]:
+        return [self.get_state(name, cls) for name, cls in requests]
+
+    def publish_many(self, messages: list[tuple[str, Any]]) -> list[dict]:
+        return [self.publish(name, obj) for name, obj in messages]
+
     def close(self) -> None:
         pass
 

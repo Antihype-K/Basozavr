@@ -86,9 +86,14 @@ class FlightStateMachine:
             target_center_xy = np.asarray(traj_generator.update(dt), dtype=float)[:2]
 
             dist_cmd_to_finish = float(np.linalg.norm(target_center_xy - self.finish_xy))
-            traj_done = getattr(traj_generator, "is_finished", False)
+            # Генератор с признаком завершения доводит уставку точно до цели;
+            # допуск по расстоянию — только для генераторов без is_finished
+            if hasattr(traj_generator, "is_finished"):
+                arrived = traj_generator.is_finished
+            else:
+                arrived = dist_cmd_to_finish < self.finish_tolerance
 
-            if traj_done or dist_cmd_to_finish < self.finish_tolerance:
+            if arrived:
                 self.hover_start_time = self.elapsed
                 self._set_phase(SwarmFlightPhase.HOVER,
                                 f"Уставка в {dist_cmd_to_finish:.2f} м от точки доставки, стабилизация")

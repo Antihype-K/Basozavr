@@ -119,3 +119,12 @@ def test_busy_port_is_reported():
             assert host.command("state") == "running=false"
         finally:
             host.close()
+
+
+def test_batch(client):
+    results = client.publish_many([(f"CableForce_{i}", Float32(value=float(i), timestamp=i)) for i in range(1, 7)])
+    assert all(r == {"status": "ok"} for r in results)
+    states = client.get_states([(f"CableForce_{i}", Float32) for i in range(1, 7)] + [("PayloadPose", Pose)])
+    assert client.supports_batch is True
+    assert [s.value for s in states[:6]] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    assert not is_published(states[6])

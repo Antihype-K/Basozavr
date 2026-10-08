@@ -82,3 +82,38 @@ def test_controller_over_real_socket(cfg):
 def test_run_without_payload_times_out(cfg):
     ctrl = SwarmRSMAController(client=LocalClient(), config=cfg, csv_log=False)
     assert ctrl.run(realtime=False, payload_timeout=0.05) is None
+
+
+def test_mission_pauses_while_telemetry_is_frozen(cfg):
+    """Unity paused for 3 s mid-flight: the trajectory must not run away meanwhile."""
+    broker = InMemoryBroker()
+    ctrl = SwarmRSMAController(client=LocalClient(broker), config=cfg, csv_log=False)
+    sim = SwarmPhysicsSim.around_payload(broker, [0, 0, 0.25], ctrl.offsets)
+    ctrl.start_mission(ctrl.read_payload_position())
+
+    while ctrl.fsm.phase != SwarmFlightPhase.TRAJECTORY:
+        sim.step(cfg.DT)
+        ctrl.step(cfg.DT)
+    for _ in range(300):
+        sim.step(cfg.DT)
+        ctrl.step(cfg.DT)
+    progress = ctrl.traj.s
+
+    for _ in range(300):  # sim frozen, controller keeps ticking
+        ctrl.step(cfg.DT)
+    assert ctrl.telemetry_stale
+    assert ctrl.traj.s - progress < (cfg.TELEMETRY_TIMEOUT + 0.05) * cfg.V_MAX
+
+    frozen_at = ctrl.traj.s
+    for _ in range(10):
+        sim.step(cfg.DT)
+        ctrl.step(cfg.DT)
+    assert not ctrl.telemetry_stale
+    assert ctrl.traj.s > frozen_at
+
+    for _ in range(20_000):
+        sim.step(cfg.DT)
+        if ctrl.step(cfg.DT) == SwarmFlightPhase.FINISHED:
+            break
+    assert ctrl.fsm.is_finished
+    np.testing.assert_allclose(sim.payload_pos[:2], ctrl.fsm.finish_xy, atol=0.1)
