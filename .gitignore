@@ -60,3 +60,6 @@ Cache.lru
 __pycache__/
 *.pyc
 .venv/
+
+# Standalone tools are real projects, not Unity-generated ones
+!/Tools/**/*.csproj

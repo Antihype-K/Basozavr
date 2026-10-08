@@ -1,0 +1,30 @@
+<!--
+  Runs the real Unity NetMQ server code (Assets/Scripts/Apps/NetMQServer) outside Unity,
+  with UnityEngine replaced by small stubs. Used by Python/tests/test_netmq_interop.py
+  to check that the Python RSMA client speaks the same protocol as the Unity side.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>UNITY_EDITOR</DefineConstants>
+    <NoWarn>CS0067;CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Same versions as Assets/Packages -->
+    <PackageReference Include="NetMQ" Version="4.0.4.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="../../Assets/Scripts/Apps/NetMQServer/Src/NetMqServer.cs" />
+    <Compile Include="../../Assets/Scripts/Apps/NetMQServer/Src/NetworkPacket.cs" />
+    <Compile Include="../../Assets/Scripts/Apps/NetMQServer/Src/NetworkResponse.cs" />
+    <Compile Include="../../Assets/Scripts/uDTP/DataBroker.cs" />
+    <Compile Include="../../Assets/Scripts/uDTP/Topics/*.cs" />
+  </ItemGroup>
+</Project>
