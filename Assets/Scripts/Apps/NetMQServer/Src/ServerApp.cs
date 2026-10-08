@@ -12,10 +12,20 @@ namespace RSMA.GUI
         private Text _stateText = null;
         private InputField _portInputField = null;
 
+        // Порт можно задать переменной окружения RSMA_PORT (так делает автозапуск из Python)
+        private static int DefaultPort
+        {
+            get
+            {
+                string fromEnv = System.Environment.GetEnvironmentVariable("RSMA_PORT");
+                return int.TryParse(fromEnv, out int port) && port > 0 && port < 65536 ? port : 5555;
+            }
+        }
+
         void Awake()
         {
             DontDestroyOnLoad(gameObject);
-            NetMQServer.Run(5555);
+            NetMQServer.Run(DefaultPort);
         }
 
         void Update()
@@ -52,12 +62,12 @@ namespace RSMA.GUI
                 RefreshState();
                 return;
             }
-            int port = 5555;
-            
-            if (!int.TryParse(_portInputField.text, out port)) 
+            int port = DefaultPort;
+
+            if (!int.TryParse(_portInputField.text, out port))
             {
-                _portInputField.text = "5555";
-                port = 5555;
+                port = DefaultPort;
+                _portInputField.text = port.ToString();
             }
 
             NetMQServer.Run(port);
@@ -78,9 +88,9 @@ namespace RSMA.GUI
 
             var portLabel = UIBuilder.CreateLabel("Port label", _mainPannel.transform, "Port: ", font, 25);
             UIBuilder.PlaceInGrid(portLabel.gameObject, 0, 0, 1, 1, 3, 2);
-            _portInputField = UIBuilder.CreateInputField("Port input", _mainPannel.transform, font, 25, "5555");
+            _portInputField = UIBuilder.CreateInputField("Port input", _mainPannel.transform, font, 25, DefaultPort.ToString());
             UIBuilder.PlaceInGrid(_portInputField.gameObject, 0, 1, 1, 1, 3, 2);
-            _portInputField.text = "5555";
+            _portInputField.text = DefaultPort.ToString();
 
             var stateLabel = UIBuilder.CreateLabel("State label", _mainPannel.transform, "Server state:", font, 25);
             UIBuilder.PlaceInGrid(stateLabel.gameObject, 1, 0, 1, 1, 3, 2);

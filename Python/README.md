@@ -31,97 +31,92 @@ python main.py --sim --fast      # миссия в ускоренном врем
 python visualize.py              # дашборд последнего полета
 ```
 
-### С Unity
-
-1. Откройте проект в Unity и запустите сцену доставки. Сервер RSMA API (`ServerApp`, NetMQ)
-   стартует на порту **5555**.
-2. Запустите контур управления:
+### С Unity: сцена запускается сама
 
 ```bash
-python main.py                   # localhost:5555
-python main.py --host 10.0.0.5   # Unity на другой машине
+python main.py                   # запустит Unity, откроет сцену SupremeFlat, нажмет Play и выполнит миссию
 ```
 
-Скрипт дождется первой телеметрии груза (`PayloadPose`) и выполнит миссию:
-подъем → перелет → стабилизация → посадка груза → посадка дронов.
-Лог полета пишется в `logs/flight_log_YYYYMMDD_HHMMSS.csv`.
+Если сцена уже запущена (сервер RSMA отвечает на порту 5555), скрипт просто подключится к ней.
+Иначе он находит редактор Unity версии проекта (`ProjectSettings/ProjectVersion.txt`) в
+Unity Hub, запускает его с проектом, открывает сцену и входит в Play
+(`Assets/Editor/RSMALauncher.cs`), ждет сервер и только потом начинает управлять.
+Первый запуск на свежем клоне долгий: Unity импортирует ассеты (несколько минут).
+После скрипта Unity остается открытой: следующие скрипты подключаются к ней сразу.
 
+Если редактор стоит не в стандартной папке Unity Hub, укажите путь:
+`export RSMA_UNITY=~/Unity/Hub/Editor/6000.3.16f1/Editor/Unity` (Windows:
+`$env:RSMA_UNITY="C:\Program Files\Unity\Hub\Editor\6000.3.16f1\Editor\Unity.exe"`) или `--unity ПУТЬ`.
+Если проект уже открыт в Unity, вторую копию Unity запустить нельзя — нажмите Play в открытой.
+
+Миссия: подъем → перелет → стабилизация → посадка груза → посадка дронов.
+Лог полета пишется в `logs/flight_log_YYYYMMDD_HHMMSS.csv`.
 Все параметры миссии (точка доставки, высота, скорости, коэффициенты anti-sway) задаются в
 [`Source/config.py`](Source/config.py).
 
-| Аргумент `main.py` | Назначение |
+| Аргумент `main.py` и скриптов | Назначение |
 |---|---|
-| `--host`, `--port` | адрес RSMA NetMQ сервера |
-| `--sim` | встроенная физическая модель вместо Unity |
+| `--no-launch` | не запускать Unity, только подключиться к уже запущенной сцене |
+| `--scene ПУТЬ` | сцена для автозапуска (по умолчанию `Assets/Scenes/SupremeFlat.unity`) |
+| `--unity ПУТЬ` | редактор Unity (иначе `RSMA_UNITY` или Unity Hub) |
+| `--player ПУТЬ` | запустить собранный плеер вместо редактора |
+| `--close-unity` | закрыть запущенную скриптом Unity в конце |
+| `--host`, `--port` | адрес сервера RSMA (на другой машине сцену запускают вручную) |
+| `--sim` (`main.py`), `--offline` (скрипты) | встроенная модель вместо Unity |
 | `--fast` | с `--sim`: без ожидания реального времени |
-| `--max-steps N` | остановиться через N шагов |
-| `--no-csv` | не писать CSV-лог |
-| `--payload-timeout S` | ждать телеметрию груза не дольше S секунд |
-| `-v` | подробный лог |
+| `--max-steps N`, `--no-csv`, `--payload-timeout S`, `-v` | ограничение шагов, без CSV, таймаут телеметрии, подробный лог |
 
 `visualize.py [LOG.csv] [--save report.png]` строит дашборд по указанному или самому свежему логу.
 
 ---
 
-## Управление сценой из Python-скриптов
+## Управление роем из Python-скриптов
 
-Пакет `scene` — простой API для своих скриптов: дроны, робот Maruz, датчики.
+Пакет `scene` — API для своих скриптов: рой с грузом и отдельные дроны.
 Координаты как в Unity: **X — вправо, Y — вверх, Z — вперед**.
 
 ```python
 import _rsma_path                     # в папке Python/Scripts: подключает Python/Source
 from scene import connect
 
-with connect() as sim:                # --host/--port из командной строки, --offline — без Unity
-    drone = sim.drone(1)
-    drone.fly_to(0, 5, 10)            # ждет прилета, возвращает True/False
-    drone.land()
+with connect() as sim:                # запустит сцену, если нужно; --offline — без Unity
+    swarm = sim.swarm()               # все дроны и груз
+    swarm.lift(3.0)                   # поднять груз на 3 м
+    swarm.move_payload_by(10, 0, 5)   # перенести на 10 м по X и 5 м по Z
+    swarm.lower()                     # опустить груз
+    swarm.land()                      # посадить дронов
 
-    maruz = sim.maruz()
-    maruz.drive(0.5, duration=2)      # м/с вперед, 2 с
-    maruz.turn(1.0, duration=1)       # рад/с, > 0 — влево
-    maruz.go_to(3, 4)                 # в точку (x, z)
-    maruz.follow([(0, 0), (2, 0), (2, 2)])
-
-    print(sim.lidar().min_distance(), sim.rangefinder().distance())
-    sim.camera(0).save("frame.png")
+    print(swarm.payload_position, swarm.cable_forces())
+    sim.drone(1).fly_to(0, 5, 10)     # отдельный дрон (тянет груз за трос!)
 ```
 
 | Объект | Что умеет | Топики |
 |---|---|---|
-| `sim.drone(i)` | `position`, `set_target`, `fly_to`, `move_by`, `hover`, `land` | `DronePose_i` / `DroneTargetPose_i` |
-| `sim.maruz()` | `position`, `heading`, `drive`, `turn`, `set_wheels`, `stop`, `go_to`, `rotate_to`, `follow`, `release` | `MaruzPose` / `MaruzTargetVelocity`, `MaruzML`, `MaruzMR` |
-| `sim.lidar(topic)` | `scan`, `ranges`, `angles`, `points`, `min_distance`, `distance_at` | `LaserScan128/256` |
-| `sim.rangefinder(topic)` | `distance` | `Float32` |
-| `sim.camera(i)` | `frame` (numpy H×W×3), `save` | `Camera_i` |
-| `sim` | `sleep`, `wait_until`, `time`, `get`/`publish` любого топика, `print` в консоль Unity, `restart_level`, `payload_pose`, `cable_force` | |
+| `sim.swarm()` | `lift`, `move_payload_to`, `move_payload_by`, `set_payload_target`, `lower`, `land`, `payload_position`, `cable_forces` | все ниже |
+| `sim.drone(i)` | `position`, `cable_force`, `set_target`, `fly_to`, `move_by`, `hover`, `land` | `DronePose_i` / `DroneTargetPose_i` |
+| `sim` | `find_drones`, `payload_pose`, `cable_force`, `camera`, `sleep`, `wait_until`, `time`, `get`/`publish` любого топика, `print` в консоль Unity, `restart_level` | `PayloadPose`, `CableForce_i` |
 
-**Примеры** в [`Scripts/`](Scripts): связь со сценой, квадрат дроном, формация дронов по кругу,
-езда Maruz, объезд точек, объезд препятствий по лидару, снимок с камеры.
+`Swarm` запоминает формацию (смещения дронов от груза) в момент создания и задает положение
+*груза*: дроны держат формацию над ним на высоте натянутых тросов.
+
+**Примеры** в [`Scripts/`](Scripts):
 
 ```bash
 cd Python/Scripts
-python 02_drone_square.py              # Unity на localhost:5555
-python 05_maruz_waypoints.py --offline # без Unity
-python -m scene --offline              # интерактивная консоль (из Python/Source)
+python 01_hello.py               # дроны, груз и натяжение тросов
+python 02_lift_and_hold.py       # поднять груз, подержать, опустить
+python 03_deliver.py --dx 10 --dz 5   # перенести груз
+python 04_camera_snapshot.py     # кадр с камеры RSMACamera
+python -m scene                  # интерактивная консоль (из папки Python/Source)
 ```
 
-**Запуск из Unity.** В терминале RSMA: `py` — список скриптов, `py 04_maruz_drive.py` — запуск
+**Запуск из Unity.** В терминале RSMA: `py` — список скриптов, `py 03_deliver.py` — запуск
 (вывод идет в консоль Unity), `py_stop` — остановить. Интерпретатор задается переменной окружения
 `RSMA_PYTHON` (по умолчанию `python` в Windows, `python3` в Linux/macOS), папка скриптов —
 `RSMA_PYTHON_SCRIPTS` (по умолчанию `<проект>/Python/Scripts`).
 
-**Кто управляет роботом.** У Maruz в сцене есть свои контроллеры (`MaruzVelocity`,
-`MaruzPositionController`, `MaruzTrajectoryPlanner`), которые каждый кадр пишут в те же топики.
-Когда скрипт отдает команду, он берет «аренду» управления (топик `ExternalControl_Maruz`,
-`Assets/Scripts/uDTP/ExternalControl.cs`): пока она продлевается (каждые 0.1 с, в фоне),
-эти контроллеры молчат, а при `set_wheels` отключается и `MotionController`. Если скрипт
-завершился или завис, через 0.5 с управление само возвращается Unity; `maruz.release()` —
-вернуть сразу. Дронам аренда не нужна: их цель задает только Python.
-
-**Офлайн-режим** (`--offline`, `Simulation.offline()`) — модель сцены без Unity: дрон с PID из
-`Quadrocopter.cs`, кинематика Maruz по `MotionController.cs`, статичные лидар и дальномер.
-Время в нем виртуальное (`sim.sleep` продвигает модель), так что скрипты отлаживаются быстро.
+**Офлайн-режим** (`--offline`, `Simulation.offline()`) — та же модель роя, тросов и груза, что для
+`main.py --sim`. Время в нем виртуальное (`sim.sleep` продвигает модель), скрипты отлаживаются быстро.
 
 ## Топики uDTP
 
@@ -141,12 +136,12 @@ Unity использует левую систему координат (Y — �
 from RSMA.Client import RSMAClient
 from RSMA.Types.Vector3 import Vector3
 from RSMA.uDTP import is_published
-from RSMA.uDTP.Topics import Pose, RobotVelocity
+from RSMA.uDTP.Topics import Pose
 
 with RSMAClient(host="localhost", port=5555, timeout=1000) as client:
     print(client.ping())                                     # True, если Unity отвечает
-    client.publish("MaruzTargetVelocity", RobotVelocity(timestamp=1, linearVelocity=0.5))
-    pose = client.get_state("MaruzPose", Pose)
+    client.publish("DroneTargetPose_1", Pose(position=Vector3(0, 5, 0), timestamp=1))
+    pose = client.get_state("PayloadPose", Pose)
     if is_published(pose):                                   # не путать с пустой default-структурой
         print(pose.position, pose.rotation.to_yaw())
 ```
@@ -184,8 +179,7 @@ Python/
     │   ├── MockServer.py     # эмулятор NetMQ-сервера Unity
     │   ├── Types/            # Vector3, Quaternion, Transform (как в Unity)
     │   ├── uDTP/Topics/      # топики uDTP
-    │   └── SLAM/             # адаптер лидара для BreezySLAM (см. requirements-slam.txt)
-    ├── scene/                # API для скриптов управления: Simulation, Drone, Maruz, датчики
+    ├── scene/                # API для скриптов: Simulation, Swarm, Drone, автозапуск Unity (launcher.py)
     ├── control/
     │   ├── swarm_controller.py     # цикл управления (step / run)
     │   ├── flight_state_machine.py # LIFT → TRAJECTORY → HOVER → LAND → LAND_DRONES → FINISHED
@@ -193,7 +187,7 @@ Python/
     │   ├── anti_sway.py            # гашение раскачки груза
     │   └── formation.py            # N-угольная формация
     ├── sim/swarm_sim.py      # физическая модель сцены доставки (дроны, тросы, груз) для --sim и тестов
-    ├── sim/scene_sim.py      # офлайн-модель для скриптов (дроны, Maruz, датчики)
+    ├── sim/scene_sim.py      # офлайн-сцена для скриптов (обертка над swarm_sim)
     └── utils/                # CSV/консольный логгер, пересчет систем координат
 ```
 

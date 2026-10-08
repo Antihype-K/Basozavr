@@ -4,7 +4,7 @@
 имитационного моделирования мобильных робототехнических комплексов в Unity.
 
 * **Unity (RSMA)** моделирует физику: дроны (`Quadrocopter`, `PX4Quadrocopter`), упругие тросы
-  (`RSMACable`), груз, датчики (лидар, камера, дальномер) и окружение.
+  (`RSMACable`), груз, камера и окружение.
 * **Python** ([`Python/`](Python/README.md)) управляет роем: автомат состояний миссии,
   S-образная траектория, гашение раскачки груза, CSV-логи и дашборд.
 * Связь между ними идет по **RSMA API (uDTP)**: топики с последним состоянием (`DataBroker`) и
@@ -14,17 +14,16 @@
 
 ## Быстрый старт
 
-1. Откройте проект в **Unity 6000.3.16f1** (Unity Hub → Add → папка репозитория).
-2. Откройте сцену доставки (`Assets/1.unity` или `Assets/Scenes/SupremeFlat.unity`, в которых есть
-   `RSMASwarmEnvironment`) и нажмите Play. NetMQ-сервер (`ServerApp`) поднимется на порту 5555.
-3. Запустите контур управления на Python:
+Нужны **Unity 6000.3.16f1** (через Unity Hub) и **Python 3.10+**. Сцену вручную открывать не нужно:
+`main.py` и скрипты сами запускают Unity, открывают `Assets/Scenes/SupremeFlat.unity` и нажимают Play
+(если сцена уже запущена — просто подключаются).
 
 ```bash
 cd Python
 python -m venv .venv && source .venv/bin/activate   # Windows: ./.venv/Scripts/Activate.ps1
 pip install -r requirements.txt
 cd Source
-python main.py
+python main.py          # запустит сцену и выполнит миссию доставки
 ```
 
 Без Unity контур можно запустить на встроенной физической модели сцены: `python main.py --sim --fast`.
@@ -32,19 +31,23 @@ python main.py
 
 ### Свои скрипты управления
 
-Дронами, роботом Maruz и датчиками можно управлять короткими Python-скриптами:
+Роем и грузом можно управлять короткими Python-скриптами. Скрипт сам запустит Unity,
+откроет сцену SupremeFlat и нажмет Play, если сцена еще не запущена:
 
 ```python
 from scene import connect
 
 with connect() as sim:
-    sim.drone(1).fly_to(0, 5, 10)
-    sim.maruz().go_to(3, 4)
+    swarm = sim.swarm()
+    swarm.lift(3.0)
+    swarm.move_payload_by(10, 0, 5)
+    swarm.lower()
+    swarm.land()
 ```
 
-Готовые примеры — в [`Python/Scripts`](Python/Scripts) (`python 02_drone_square.py`,
+Готовые примеры — в [`Python/Scripts`](Python/Scripts) (`python 03_deliver.py`,
 `--offline` — без Unity). Из Unity их можно запускать командой `py <скрипт>` в терминале RSMA.
-Подробности — в разделе «Управление сценой из Python-скриптов» [Python/README.md](Python/README.md).
+Подробности — в разделе «Управление роем из Python-скриптов» [Python/README.md](Python/README.md).
 
 ## Структура
 

@@ -3,7 +3,7 @@ using System.Threading;
 using RSMA.NetMQ;
 
 // Usage: NetMQHost <port>
-// Prints READY, then reads commands from stdin: state | stop | run | quit | lease <robot>
+// Prints READY, then reads commands from stdin: state | stop | run | quit
 public static class Program
 {
     public static int Main(string[] args)
@@ -28,16 +28,6 @@ public static class Program
         string line;
         while ((line = Console.ReadLine()) != null)
         {
-            string[] parts = line.Trim().Split(' ');
-            if (parts[0] == "lease" && parts.Length > 1)
-            {
-                // ExternalControl.Level() is called from the Unity main thread in the real scene
-                int level = 0;
-                RunOnMainThread(() => level = RSMA.uDTP.ExternalControl.Level(parts[1]));
-                Console.WriteLine($"level={level}");
-                continue;
-            }
-
             switch (line.Trim())
             {
                 case "state":
@@ -60,12 +50,5 @@ public static class Program
             Console.WriteLine($"running={NetMQServer.IsRunning.ToString().ToLowerInvariant()}");
         }
         return 0;
-    }
-
-    private static void RunOnMainThread(Action action)
-    {
-        var done = new ManualResetEventSlim();
-        NetMQServer.EnqueueAction(() => { action(); done.Set(); });
-        done.Wait(2000);
     }
 }

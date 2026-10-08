@@ -1,18 +1,12 @@
 import logging
 import math
-from collections.abc import Iterable
 
-from RSMA.Mathf import clamp, delta_angle
 from RSMA.Time import get_unix_time_milliseconds
 from RSMA.Types.Quaternion import Quaternion
 from RSMA.Types.Vector3 import Vector3
-from RSMA.uDTP.Topics import MotorInput, Pose, RobotVelocity
+from RSMA.uDTP.Topics import Pose
 
 log = logging.getLogger("scene")
-
-# Уровни внешнего управления (Assets/Scripts/uDTP/ExternalControl.cs)
-COMMANDS = 1
-ACTUATORS = 2
 
 
 def _vec(x, y=None, z=None) -> Vector3:
@@ -49,6 +43,11 @@ class Drone:
     def position(self) -> Vector3 | None:
         pose = self.pose
         return None if pose is None else pose.position
+
+    @property
+    def cable_force(self) -> float | None:
+        """Натяжение троса этого дрона, Н (если дрон привязан к грузу)."""
+        return self.sim.cable_force(self.id)
 
     def set_target(self, x, y=None, z=None) -> Vector3:
         """Задает целевую точку и сразу возвращается (не ждет прилета)."""
@@ -100,143 +99,109 @@ class Drone:
         return self.fly_to(pos.x, ground_y, pos.z, **kwargs)
 
 
-class Maruz:
+class Swarm:
     """
-    Колесный робот Maruz (сцена SupremeFlat): дифференциальный привод.
+    Рой дронов, несущий груз на тросах (сцена RSMASwarmEnvironment).
 
-        maruz = sim.maruz()
-        maruz.drive(0.5, duration=2)      # 0.5 м/с вперед 2 секунды
-        maruz.turn(0.8, duration=1)       # поворот влево 0.8 рад/с
-        maruz.go_to(3, 4)                 # в точку (x=3, z=4) по земле
+    Формация запоминается при создании: смещения дронов от груза по горизонтали.
+    Команды задают положение *груза*, а дроны держат формацию над ним.
 
-    Пока скрипт командует роботом, встроенные контроллеры Maruz в Unity
-    (MaruzVelocity, MaruzPositionController, MaruzTrajectoryPlanner) молчат.
-    release() возвращает им управление.
-
-    heading — направление движения робота: рыскание в градусах, как в Unity
-    (0 — вдоль +Z, 90 — вдоль +X). Положительная угловая скорость — поворот влево.
+        swarm = sim.swarm()
+        swarm.lift(3.0)                       # поднять груз на 3 м
+        swarm.move_payload_by(10, 0, 5)       # перенести груз
+        swarm.lower()                         # опустить груз
+        swarm.land()                          # посадить дронов
     """
 
-    def __init__(self, sim, name: str = "Maruz"):
+    def __init__(self, sim, drone_ids: list[int] | None = None, cable_length: float = 2.0,
+                 cable_margin: float = 0.2):
         self.sim = sim
-        self.name = name
+        if drone_ids is None:
+            drone_ids = sim.find_drones()
+        self.drones = [Drone(sim, i) for i in drone_ids]
+        if not self.drones:
+            raise RuntimeError("В сцене нет дронов (топики DronePose_i)")
+
+        payload = sim.payload_pose()
+        if payload is None:
+            raise RuntimeError("Груз не найден: топик PayloadPose не публикуется")
+        self.ground_y = payload.position.y  # высота центра груза, стоящего на земле
+
+        # Формация: горизонтальные смещения дронов от груза
+        self.offsets: dict[int, tuple[float, float]] = {}
+        for d in self.drones:
+            pos = d.position
+            if pos is None:
+                raise RuntimeError(f"Позиция дрона {d.id} неизвестна")
+            self.offsets[d.id] = (pos.x - payload.position.x, pos.z - payload.position.z)
+
+        radius = max(math.hypot(*off) for off in self.offsets.values())
+        # Высота дронов над грузом при натянутых тросах
+        self.hang_height = math.sqrt(max(0.1, cable_length**2 - radius**2)) + cable_margin
+        self.payload_target: Vector3 | None = None
 
     def __repr__(self) -> str:
-        return f"Maruz({self.name!r}, position={self.position}, heading={self.heading})"
+        return f"Swarm(drones={[d.id for d in self.drones]}, payload={self.payload_position})"
 
     @property
-    def pose(self) -> Pose | None:
-        return self.sim.get(f"{self.name}Pose", Pose)
-
-    @property
-    def position(self) -> Vector3 | None:
-        pose = self.pose
+    def payload_position(self) -> Vector3 | None:
+        pose = self.sim.payload_pose()
         return None if pose is None else pose.position
 
-    @property
-    def heading(self) -> float | None:
-        pose = self.pose
-        return None if pose is None else pose.rotation.to_yaw()
+    def cable_forces(self) -> dict[int, float | None]:
+        return {d.id: d.cable_force for d in self.drones}
 
-    # --- Прямые команды ---
+    def set_payload_target(self, x, y=None, z=None) -> None:
+        """Ставит дронам цели так, чтобы груз висел в точке (x, y, z). Не ждет."""
+        target = _vec(x, y, z)
+        self.payload_target = target
+        for d in self.drones:
+            ox, oz = self.offsets[d.id]
+            d.set_target(target.x + ox, target.y + self.hang_height, target.z + oz)
 
-    def drive(self, linear: float, angular: float = 0.0, duration: float | None = None) -> None:
+    def move_payload_to(self, x, y=None, z=None, speed: float = 0.6, tolerance: float = 0.4,
+                        timeout: float | None = 120.0, period: float = 0.05) -> bool:
         """
-        Задает скорость: linear — м/с (вперед > 0), angular — рад/с (влево > 0).
-        С duration — едет указанное время и останавливается.
+        Плавно переносит груз в точку: цель движется со скоростью speed (м/с),
+        затем ждет, пока груз окажется ближе tolerance м. Возвращает успех.
         """
-        command = RobotVelocity(timestamp=get_unix_time_milliseconds(),
-                                linearVelocity=float(linear), angularVelocity=float(angular))
-        self.sim.take_control(self.name, COMMANDS, [(f"{self.name}TargetVelocity", command)])
-        if duration is not None:
-            self.sim.sleep(duration)
-            self.stop()
+        goal = _vec(x, y, z)
+        start = self.payload_target or self.payload_position
+        if start is None:
+            raise RuntimeError("Позиция груза неизвестна")
 
-    def turn(self, angular: float, duration: float | None = None) -> None:
-        """Поворот на месте с угловой скоростью angular (рад/с, влево > 0)."""
-        self.drive(0.0, angular, duration)
-
-    def set_wheels(self, left: float, right: float, duration: float | None = None) -> None:
-        """Прямое управление моторами колес, значения от -1 до 1 (MaruzML / MaruzMR)."""
-        ts = get_unix_time_milliseconds()
-        self.sim.take_control(self.name, ACTUATORS, [
-            (f"{self.name}ML", MotorInput(timestamp=ts, input=clamp(float(left), -1.0, 1.0))),
-            (f"{self.name}MR", MotorInput(timestamp=ts, input=clamp(float(right), -1.0, 1.0))),
-        ])
-        if duration is not None:
-            self.sim.sleep(duration)
-            self.stop()
-
-    def stop(self) -> None:
-        """Остановка (управление остается у скрипта)."""
-        self.drive(0.0, 0.0)
-
-    def release(self) -> None:
-        """Остановиться и вернуть управление Unity-контроллерам робота."""
-        self.stop()
-        self.sim.release_control(self.name)
-
-    # --- Навигация ---
-
-    def _require_pose(self) -> Pose:
-        pose = self.pose
-        if pose is None:
-            raise RuntimeError(f"Поза робота неизвестна: топик {self.name}Pose не публикуется")
-        return pose
-
-    def rotate_to(self, heading: float, tolerance: float = 3.0, max_angular: float = 1.5, k: float = 2.0,
-                  timeout: float | None = 20.0, period: float = 0.05) -> bool:
-        """Поворот на месте до направления heading (градусы, как в Unity)."""
-        start = self.sim.time
-        while True:
-            error = delta_angle(self._require_pose().rotation.to_yaw(), heading)
-            if abs(error) <= tolerance:
-                self.stop()
-                return True
-            if timeout is not None and self.sim.time - start >= timeout:
-                self.stop()
-                log.warning("%s: не удалось повернуть на %.1f° за %s с", self.name, heading, timeout)
-                return False
-            # Ошибка > 0 — цель правее, нужно увеличить рыскание, т.е. повернуть вправо (angular < 0)
-            self.drive(0.0, -clamp(k * math.radians(error), -max_angular, max_angular))
+        distance = start.distance_to(goal)
+        steps = max(1, math.ceil(distance / (speed * period)))
+        for k in range(1, steps + 1):
+            self.set_payload_target(start.lerp(goal, k / steps))
             self.sim.sleep(period)
 
-    def go_to(self, x: float, z: float, speed: float = 0.5, tolerance: float = 0.35,
-              max_angular: float = 1.5, k: float = 2.0, timeout: float | None = 60.0, period: float = 0.05,
-              stop: bool = True) -> bool:
-        """
-        Едет в точку (x, z) на плоскости земли: поворачивает на цель и едет,
-        замедляясь при большой ошибке курса (> 60° — разворот на месте).
-        Возвращает True, если доехал в пределах tolerance м.
-        """
-        start = self.sim.time
-        while True:
-            pose = self._require_pose()
-            dx, dz = x - pose.position.x, z - pose.position.z
-            distance = math.hypot(dx, dz)
-            if distance <= tolerance:
-                if stop:
-                    self.stop()
-                return True
-            if timeout is not None and self.sim.time - start >= timeout:
-                self.stop()
-                log.warning("%s: не доехал до (%.2f, %.2f) за %s с, осталось %.2f м", self.name, x, z, timeout, distance)
-                return False
+        ok = self.sim.wait_until(
+            lambda: (p := self.payload_position) is not None and p.distance_to(goal) <= tolerance, timeout)
+        if not ok:
+            log.warning("Груз не дошел до %s за %s с (сейчас %s)", goal, timeout, self.payload_position)
+        return ok
 
-            bearing = math.degrees(math.atan2(dx, dz))
-            error = delta_angle(pose.rotation.to_yaw(), bearing)
-            angular = -clamp(k * math.radians(error), -max_angular, max_angular)
-            linear = 0.0 if abs(error) > 60.0 else speed * max(0.0, math.cos(math.radians(error)))
-            # Плавное торможение у цели
-            linear = min(linear, max(0.1, distance))
-            self.drive(linear, angular)
-            self.sim.sleep(period)
+    def move_payload_by(self, dx: float, dy: float, dz: float, **kwargs) -> bool:
+        base = self.payload_target or self.payload_position
+        return self.move_payload_to(base.x + dx, base.y + dy, base.z + dz, **kwargs)
 
-    def follow(self, points: Iterable, **kwargs) -> bool:
-        """Проезжает точки (x, z) по очереди. Возвращает False на первой недостигнутой."""
-        points = list(points)
-        for i, (x, z) in enumerate(points):
-            last = i == len(points) - 1
-            if not self.go_to(x, z, stop=last, **kwargs):
-                return False
-        return True
+    def lift(self, height: float = 3.0, **kwargs) -> bool:
+        """Поднимает груз на height м над землей."""
+        p = self.payload_target or self.payload_position
+        return self.move_payload_to(p.x, self.ground_y + height, p.z, **kwargs)
+
+    def lower(self, **kwargs) -> bool:
+        """Опускает груз на землю под текущей точкой."""
+        p = self.payload_target or self.payload_position
+        kwargs.setdefault("tolerance", 0.3)
+        return self.move_payload_to(p.x, self.ground_y, p.z, **kwargs)
+
+    def land(self, ground_y: float | None = None, timeout: float | None = 60.0) -> bool:
+        """Сажает дронов вокруг груза (трос провисает)."""
+        y = self.ground_y if ground_y is None else ground_y
+        for d in self.drones:
+            pos = d.position or d.target
+            d.set_target(pos.x, y, pos.z)
+        return self.sim.wait_until(lambda: all((d.distance_to_target() or math.inf) <= 0.3 for d in self.drones),
+                                   timeout)

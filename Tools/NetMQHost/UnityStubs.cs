@@ -6,12 +6,6 @@ namespace UnityEngine
     public struct Vector3 { public float x, y, z; }
     public struct Quaternion { public float x, y, z, w; }
 
-    public static class Time
-    {
-        private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
-        public static float realtimeSinceStartup => (float)Clock.Elapsed.TotalSeconds;
-    }
-
     public static class Debug
     {
         public static void Log(object message) => Console.Error.WriteLine(message);

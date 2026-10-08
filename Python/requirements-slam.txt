@@ -1,3 +1,0 @@
-# Optional: BreezySLAM for RSMA.SLAM (lidar mapping). Not on PyPI, install from source:
-#   pip install git+https://github.com/simondlevy/BreezySLAM.git#subdirectory=python
--r requirements.txt

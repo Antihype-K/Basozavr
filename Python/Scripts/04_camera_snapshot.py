@@ -1,7 +1,7 @@
 """
 Сохраняет кадр с камеры RSMACamera (топик Camera_<id>) в PNG.
 
-    python 07_camera_snapshot.py [--camera 0] [--out frame.png]
+    python 04_camera_snapshot.py [--camera 0] [--out frame.png]
 """
 
 import argparse

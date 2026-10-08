@@ -112,9 +112,6 @@ public class MaruzTrajectoryPlanner : MonoBehaviour
     {
         if (!isExecutingPath || currentPath == null || currentPath.Count == 0) return;
 
-        // Роботом управляет Python-скрипт (см. RSMA.uDTP.ExternalControl)
-        if (ExternalControl.IsActive("Maruz")) return;
-
         // Если дошли до конца массива путей — передаем управление контроллеру (он сам затормозит на финише)
         if (targetPointIdx >= currentPath.Count)
         {

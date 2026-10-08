@@ -3,7 +3,6 @@
 from RSMA.uDTP.Topics.ActuatorInputs import ActuatorInputs
 from RSMA.uDTP.Topics.ArmCommand import ArmCommand
 from RSMA.uDTP.Topics.CameraFramePacket import CameraFramePacket
-from RSMA.uDTP.Topics.ControlLease import ControlLease
 from RSMA.uDTP.Topics.FlightModeCommand import FlightModeCommand
 from RSMA.uDTP.Topics.Float32 import Float32
 from RSMA.uDTP.Topics.HILGPS import HILGPS
@@ -22,7 +21,6 @@ TOPIC_TYPES: dict[str, type] = {
     "ActuatorInputs": ActuatorInputs,
     "ArmCommand": ArmCommand,
     "CameraFramePacket": CameraFramePacket,
-    "ControlLease": ControlLease,
     "FlightModeCommand": FlightModeCommand,
     "Float32": Float32,
     "HILGPS": HILGPS,
@@ -38,4 +36,3 @@ TOPIC_TYPES: dict[str, type] = {
     "TrajectoryPoint": TrajectoryPoint,
 }
 
-__all__ = ["TOPIC_TYPES", "ActuatorInputs", "ArmCommand", "CameraFramePacket", "ControlLease", "FlightModeCommand", "Float32", "HILGPS", "HILOpticalFlow", "HILSensor", "HILStateQuaternion", "LaserScan128", "LaserScan256", "MotorInput", "Pose", "RCChannelsInput", "RobotVelocity", "TrajectoryPoint"]

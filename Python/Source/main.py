@@ -1,8 +1,9 @@
 """
 Точка входа: контур управления роем при доставке груза.
 
-    python main.py                     # подключение к RSMA (Unity) на localhost:5555
-    python main.py --host 10.0.0.5     # RSMA на другой машине
+    python main.py                     # запустит Unity со сценой (если не запущена) и выполнит миссию
+    python main.py --no-launch         # только подключиться к уже запущенной сцене
+    python main.py --host 10.0.0.5     # RSMA на другой машине (там сцену запускают вручную)
     python main.py --sim               # без Unity: встроенная физическая модель сцены
     python main.py --sim --fast        # то же, без ожидания реального времени
 """
@@ -12,12 +13,13 @@ import logging
 
 import config
 from control.swarm_controller import SwarmRSMAController
+from scene.simulation import add_connection_args, ensure_scene
 
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="RSMA swarm delivery control loop")
-    parser.add_argument("--host", default=config.RSMA_HOST, help="адрес RSMA NetMQ сервера")
-    parser.add_argument("--port", type=int, default=config.RSMA_PORT, help="порт RSMA NetMQ сервера")
+    add_connection_args(parser)
+    parser.set_defaults(host=config.RSMA_HOST, port=config.RSMA_PORT)
     parser.add_argument("--sim", action="store_true", help="работать со встроенной моделью вместо Unity")
     parser.add_argument("--fast", action="store_true", help="с --sim: не выдерживать реальное время")
     parser.add_argument("--max-steps", type=int, default=None, help="остановиться после N шагов")
@@ -39,6 +41,7 @@ def main(argv=None) -> int:
     config.RSMA_HOST, config.RSMA_PORT = args.host, args.port
 
     before_step = None
+    unity = None
     if args.sim:
         from RSMA.Broker import InMemoryBroker, LocalClient
         from sim.swarm_sim import SwarmPhysicsSim
@@ -48,6 +51,7 @@ def main(argv=None) -> int:
         sim = SwarmPhysicsSim.around_payload(broker, payload_pos=[0.0, 0.0, 0.25], offsets=controller.offsets)
         before_step = sim.step
     else:
+        unity = ensure_scene(args)
         controller = SwarmRSMAController(csv_log=not args.no_csv)
         if not controller.client.ping():
             logging.warning("RSMA не отвечает на %s:%d — жду запуска сцены...", args.host, args.port)
@@ -56,6 +60,8 @@ def main(argv=None) -> int:
     phase = controller.run(realtime=realtime, max_steps=args.max_steps,
                            payload_timeout=args.payload_timeout, before_step=before_step)
     controller.client.close()
+    if not args.sim and args.close_unity and unity is not None:
+        unity.stop()
     return 0 if phase is not None else 1
 
 

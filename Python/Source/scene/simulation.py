@@ -1,15 +1,13 @@
 import argparse
 import logging
-import threading
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
 from RSMA.Broker import InMemoryBroker, LocalClient
 from RSMA.Client import RSMAClient
-from RSMA.Time import get_unix_time_milliseconds
 from RSMA.uDTP import is_published
-from RSMA.uDTP.Topics import ControlLease, Float32, Pose
+from RSMA.uDTP.Topics import Float32, Pose
 
 T = TypeVar("T")
 log = logging.getLogger("scene")
@@ -17,46 +15,31 @@ log = logging.getLogger("scene")
 
 class Simulation:
     """
-    Подключение к сцене RSMA для скриптов управления.
+    Подключение к сцене доставки груза роем для скриптов управления.
 
-        from scene import Simulation
+        from scene import connect
 
-        with Simulation() as sim:                 # Unity на localhost:5555
-            drone = sim.drone(1)
-            drone.fly_to(0, 5, 0)
+        with connect() as sim:                # запустит Unity со сценой, если она еще не запущена
+            swarm = sim.swarm()
+            swarm.lift(3.0)
 
-        with Simulation.offline() as sim:         # без Unity, встроенная модель
+        with Simulation.offline() as sim:     # без Unity, встроенная модель
             ...
 
     Все координаты — как в Unity: X — вправо, Y — вверх, Z — вперед.
-
-    Пока скрипт управляет роботом (например, Maruz), Simulation в фоне продлевает
-    «аренду» управления (топик ExternalControl_<робот>) и повторяет последнюю команду,
-    поэтому встроенные Unity-контроллеры робота не перетирают команды скрипта.
-    При выходе из `with` (или close()) управление возвращается Unity.
     """
 
     def __init__(self, host: str = "localhost", port: int = 5555, timeout: int = 1000,
-                 client=None, offline_scene=None, keepalive_period: float = 0.1, lease_duration: float = 0.5):
+                 client=None, offline_scene=None, unity=None, close_unity: bool = False):
         self.client = client if client is not None else RSMAClient(host=host, port=port, timeout=timeout)
         self.scene = offline_scene
-        self.keepalive_period = keepalive_period
-        self.lease_duration = lease_duration
-
-        self._leases: dict[str, tuple[int, list[tuple[str, Any]]]] = {}
-        self._last_lease_ts = 0
-        self._lock = threading.RLock()
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self.unity = unity  # scene.launcher.UnityInstance, если Unity запускал скрипт
+        self.close_unity = close_unity
         self._t0 = time.monotonic()
-
-        if self.scene is None:
-            self._thread = threading.Thread(target=self._keepalive_loop, name="scene-keepalive", daemon=True)
-            self._thread.start()
 
     @classmethod
     def offline(cls, **scene_kwargs) -> "Simulation":
-        """Simulation на встроенной модели сцены (sim.scene_sim.OfflineScene), время виртуальное."""
+        """Simulation на встроенной модели сцены (дроны, тросы, груз), время виртуальное."""
         from sim.scene_sim import OfflineScene
 
         broker = InMemoryBroker()
@@ -78,8 +61,7 @@ class Simulation:
         if seconds <= 0:
             return
         if self.scene is not None:
-            with self._lock:
-                self.scene.advance(seconds)
+            self.scene.advance(seconds)
         else:
             time.sleep(seconds)
 
@@ -116,81 +98,47 @@ class Simulation:
 
     # --- Объекты сцены ---
 
+    def find_drones(self, max_id: int = 16) -> list[int]:
+        """Номера дронов, которые есть в сцене (публикуют DronePose_i)."""
+        poses = self.client.get_states([(f"DronePose_{i}", Pose) for i in range(1, max_id + 1)])
+        return [i for i, pose in enumerate(poses, start=1) if is_published(pose)]
+
     def drone(self, drone_id: int = 1):
         from scene.robots import Drone
         return Drone(self, drone_id)
 
-    def maruz(self, name: str = "Maruz"):
-        from scene.robots import Maruz
-        return Maruz(self, name)
+    def drones(self) -> list:
+        return [self.drone(i) for i in self.find_drones()]
 
-    def lidar(self, topic: str = "Lidar", size: int = 128):
-        from scene.sensors import Lidar
-        return Lidar(self, topic, size)
+    def swarm(self, drone_ids: list[int] | None = None, **kwargs):
+        from scene.robots import Swarm
+        return Swarm(self, drone_ids, **kwargs)
 
-    def rangefinder(self, topic: str = "RangeFinder"):
-        from scene.sensors import RangeFinder
-        return RangeFinder(self, topic)
-
-    def camera(self, camera_id: int = 0):
-        from scene.sensors import Camera
-        return Camera(self, camera_id)
+    def payload_pose(self) -> Pose | None:
+        return self.get("PayloadPose", Pose)
 
     def cable_force(self, cable_id: int) -> float | None:
         msg = self.get(f"CableForce_{cable_id}", Float32)
         return None if msg is None else msg.value
 
-    def payload_pose(self) -> Pose | None:
-        return self.get("PayloadPose", Pose)
+    def camera(self, camera_id: int = 0):
+        from scene.sensors import Camera
+        return Camera(self, camera_id)
 
-    # --- Внешнее управление (ExternalControl) ---
-
-    def _lease_timestamp(self) -> int:
-        ts = max(get_unix_time_milliseconds(), self._last_lease_ts + 1)
-        self._last_lease_ts = ts
-        return ts
-
-    def _lease_messages(self, robot: str, level: int, commands: list[tuple[str, Any]]) -> list[tuple[str, Any]]:
-        lease = ControlLease(timestamp=self._lease_timestamp(), level=level, duration=self.lease_duration)
-        return [(f"ExternalControl_{robot}", lease), *commands]
-
-    def take_control(self, robot: str, level: int, commands: list[tuple[str, Any]]) -> None:
-        """Берет управление роботом и публикует команды; они будут повторяться в фоне."""
-        with self._lock:
-            self._leases[robot] = (level, list(commands))
-            self.client.publish_many(self._lease_messages(robot, level, commands))
-
-    def release_control(self, robot: str) -> None:
-        """Возвращает управление роботом Unity-контроллерам."""
-        with self._lock:
-            if self._leases.pop(robot, None) is not None:
-                self.client.publish(f"ExternalControl_{robot}",
-                                    ControlLease(timestamp=self._lease_timestamp(), level=0, duration=0.0))
-
-    def _keepalive_loop(self) -> None:
-        while not self._stop.wait(self.keepalive_period):
-            with self._lock:
-                messages = []
-                for robot, (level, commands) in self._leases.items():
-                    messages += self._lease_messages(robot, level, commands)
-                if messages:
-                    try:
-                        self.client.publish_many(messages)
-                    except Exception as e:  # клиент закрыт или потерял связь
-                        log.debug("keepalive failed: %s", e)
+    def wait_for_scene(self, timeout: float = 60.0) -> bool:
+        """Ждет, пока в сцене появятся груз и дроны (после запуска Play они создаются не сразу)."""
+        ok = self.wait_until(lambda: self.payload_pose() is not None and bool(self.find_drones()), timeout, poll=0.5)
+        if not ok:
+            log.warning("За %.0f с в сцене не появились груз и дроны (PayloadPose, DronePose_i). "
+                        "Открыта сцена с RSMASwarmEnvironment?", timeout)
+        return ok
 
     # --- Жизненный цикл ---
 
     def close(self) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-        for robot in list(self._leases):
-            try:
-                self.release_control(robot)
-            except Exception as e:
-                log.debug("release failed: %s", e)
         self.client.close()
+        if self.close_unity and self.unity is not None:
+            self.unity.stop()
 
     def __enter__(self) -> "Simulation":
         return self
@@ -199,16 +147,45 @@ class Simulation:
         self.close()
 
 
+def add_connection_args(parser: argparse.ArgumentParser) -> None:
+    """Общие аргументы подключения к сцене (скрипты и main.py)."""
+    from scene.launcher import DEFAULT_SCENE
+
+    group = parser.add_argument_group("подключение к RSMA")
+    group.add_argument("--host", default="localhost", help="адрес Unity (RSMA NetMQ сервер)")
+    group.add_argument("--port", type=int, default=5555)
+    group.add_argument("--no-launch", action="store_true",
+                       help="не запускать Unity автоматически, если сцена не отвечает")
+    group.add_argument("--scene", default=DEFAULT_SCENE, help="сцена для автозапуска")
+    group.add_argument("--unity", default=None, help="путь к редактору Unity (иначе RSMA_UNITY или Unity Hub)")
+    group.add_argument("--player", default=None, help="запускать собранный плеер вместо редактора")
+    group.add_argument("--close-unity", action="store_true", help="закрыть Unity после завершения скрипта")
+
+
+def ensure_scene(args) -> Any:
+    """Запускает Unity со сценой по аргументам командной строки (если она еще не работает)."""
+    from scene.launcher import UnityLaunchError, launch_unity
+
+    if args.no_launch:
+        return None
+    try:
+        return launch_unity(scene=args.scene, host=args.host, port=args.port, unity=args.unity, player=args.player)
+    except UnityLaunchError as e:
+        raise SystemExit(f"Не удалось запустить сцену: {e}") from None
+
+
 def connect(argv: list[str] | None = None, description: str | None = None) -> Simulation:
     """
-    Simulation по аргументам командной строки скрипта:
-    --host, --port (Unity) или --offline (встроенная модель).
+    Simulation по аргументам командной строки скрипта.
+
+    По умолчанию, если сцена не отвечает, запускает Unity с проектом, открывает
+    сцену SupremeFlat и нажимает Play. --offline — встроенная модель без Unity,
+    --no-launch — только подключиться к уже запущенной сцене.
     """
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--host", default="localhost", help="адрес Unity (RSMA NetMQ сервер)")
-    parser.add_argument("--port", type=int, default=5555)
     parser.add_argument("--offline", action="store_true", help="без Unity, на встроенной модели сцены")
     parser.add_argument("-v", "--verbose", action="store_true")
+    add_connection_args(parser)
     args, _ = parser.parse_known_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -217,7 +194,10 @@ def connect(argv: list[str] | None = None, description: str | None = None) -> Si
         log.info("Офлайн-режим: встроенная модель сцены")
         return Simulation.offline()
 
-    sim = Simulation(host=args.host, port=args.port)
+    unity = ensure_scene(args)
+    sim = Simulation(host=args.host, port=args.port, unity=unity, close_unity=args.close_unity)
     if not sim.is_connected():
         log.warning("RSMA не отвечает на %s:%d — запущена ли сцена в Unity?", args.host, args.port)
+    else:
+        sim.wait_for_scene()
     return sim
