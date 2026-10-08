@@ -25,6 +25,7 @@
     <Compile Include="../../Assets/Scripts/Apps/NetMQServer/Src/NetworkPacket.cs" />
     <Compile Include="../../Assets/Scripts/Apps/NetMQServer/Src/NetworkResponse.cs" />
     <Compile Include="../../Assets/Scripts/uDTP/DataBroker.cs" />
+    <Compile Include="../../Assets/Scripts/uDTP/ExternalControl.cs" />
     <Compile Include="../../Assets/Scripts/uDTP/Topics/*.cs" />
   </ItemGroup>
 </Project>

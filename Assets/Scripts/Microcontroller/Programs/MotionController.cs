@@ -1,3 +1,4 @@
+using RSMA.uDTP;
 using RSMA.uDTP.Topics;
 using UnityEngine;
 
@@ -9,6 +10,9 @@ public class MotionController : MonoBehaviour
 
     private void Update()
     {
+        // Python-скрипт управляет колесами напрямую (MaruzML/MaruzMR)
+        if (ExternalControl.IsActive("Maruz", ExternalControl.Actuators)) return;
+
         // Получаем желаемые скорости (например, из другого модуля)
         var cmd = RSMA.uDTP.DataBroker.GetState<RobotVelocity>("MaruzTargetVelocity");
 

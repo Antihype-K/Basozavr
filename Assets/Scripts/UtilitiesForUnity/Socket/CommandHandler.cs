@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -22,6 +23,10 @@ public static class CommandHandler
         {
             return $"Number out of range in command \"{command}\"";
         }
+        catch (System.NullReferenceException) when (objectManager == null)
+        {
+            return "This command needs an ObjectManager in the scene";
+        }
     }
 
     private static string F(float value)
@@ -44,6 +49,14 @@ public static class CommandHandler
                 case "shutdown":
                     Application.Quit();
                     return "Shutting down RSMA";
+
+                case "py":
+                    if (splited.Length > 1)
+                        return PythonScriptRunner.Run(splited[1], splited.Skip(2));
+                    return PythonScriptRunner.ListScripts();
+
+                case "py_stop":
+                    return PythonScriptRunner.StopAll();
 
                 case "help":
                     Application.OpenURL("https://github.com/GrimDarkTech/RSMADocs/blob/main/Manual/en/Utilities/TerminalCommands.md");

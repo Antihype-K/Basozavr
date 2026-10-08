@@ -54,6 +54,34 @@ class PayloadParams:  # Payload.prefab / RSMASwarmEnvironment.cs
     ground_friction: float = 8.0
 
 
+def drone_step(pos: np.ndarray, vel: np.ndarray, integral: np.ndarray, target: np.ndarray | None,
+               d: DroneParams, h: float, external_force: np.ndarray | None = None
+               ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Один шаг дрона Quadrocopter.cs (система Python, Z — вверх).
+    Возвращает новые (pos, vel, integral). Без цели дрон не управляется (isControlledByApi = false).
+    """
+    force = np.array([0.0, 0.0, -d.mass * GRAVITY])
+    if external_force is not None:
+        force = force + external_force
+    if target is not None:
+        err = target - pos
+        integral = integral + err * h
+        ctrl = err * d.kp + integral * d.ki - vel * d.kd
+        ctrl[2] += d.mass * GRAVITY
+        norm = float(np.linalg.norm(ctrl))
+        if norm > d.max_force:
+            ctrl *= d.max_force / norm
+        force = force + ctrl
+
+    vel = (vel + force / d.mass * h) / (1.0 + d.linear_damping * h)
+    pos = pos + vel * h
+    if pos[2] < d.ground_z:
+        pos[2] = d.ground_z
+        vel = np.array([0.0, 0.0, max(vel[2], 0.0)])
+    return pos, vel, integral
+
+
 class SwarmPhysicsSim:
     def __init__(self, broker: InMemoryBroker, drone_positions: dict[int, np.ndarray], payload_pos,
                  drone: DroneParams | None = None, cable: CableParams | None = None,
@@ -135,25 +163,9 @@ class SwarmPhysicsSim:
             f_cable = self._cable(i)
             payload_force += f_cable
 
-            force = np.array([0.0, 0.0, -d.mass * GRAVITY]) - f_cable
-            target = self.drone_target[i]
-            if target is not None:
-                err = target - self.drone_pos[i]
-                self.drone_int[i] += err * h
-                ctrl = err * d.kp + self.drone_int[i] * d.ki - self.drone_vel[i] * d.kd
-                ctrl[2] += d.mass * GRAVITY
-                norm = float(np.linalg.norm(ctrl))
-                if norm > d.max_force:
-                    ctrl *= d.max_force / norm
-                force += ctrl
-
-            vel = self.drone_vel[i] + force / d.mass * h
-            vel /= 1.0 + d.linear_damping * h
-            pos = self.drone_pos[i] + vel * h
-            if pos[2] < d.ground_z:
-                pos[2] = d.ground_z
-                vel = np.array([0.0, 0.0, max(vel[2], 0.0)])
-            self.drone_vel[i], self.drone_pos[i] = vel, pos
+            self.drone_pos[i], self.drone_vel[i], self.drone_int[i] = drone_step(
+                self.drone_pos[i], self.drone_vel[i], self.drone_int[i], self.drone_target[i], d, h,
+                external_force=-f_cable)
 
         vel = self.payload_vel + payload_force / p.mass * h
         vel /= 1.0 + p.linear_damping * h

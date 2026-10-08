@@ -10,6 +10,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -128,3 +129,26 @@ def test_batch(client):
     assert client.supports_batch is True
     assert [s.value for s in states[:6]] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     assert not is_published(states[6])
+
+
+def test_external_control_lease(host_port):
+    """Simulation keeps the C# ExternalControl lease alive; it expires when renewals stop."""
+    from scene import Simulation
+
+    host, port = host_port
+    sim = Simulation(client=RSMAClient("127.0.0.1", port, timeout=2000), keepalive_period=0.1)
+    try:
+        assert host.command("lease Maruz") == "level=0"
+        sim.maruz().drive(0.3)
+        assert host.command("lease Maruz") == "level=1"
+        time.sleep(1.0)  # longer than lease_duration: keepalive must have renewed it
+        assert host.command("lease Maruz") == "level=1"
+        sim.maruz().set_wheels(0.1, 0.1)
+        assert host.command("lease Maruz") == "level=2"
+
+        sim._stop.set()  # script hangs: no more renewals
+        sim._thread.join()
+        time.sleep(0.8)
+        assert host.command("lease Maruz") == "level=0"
+    finally:
+        sim.close()

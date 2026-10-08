@@ -32,6 +32,9 @@ public class MaruzVelocity : MonoBehaviour
 
     private void Update()
     {
+        // Роботом управляет Python-скрипт (см. RSMA.uDTP.ExternalControl)
+        if (ExternalControl.IsActive("Maruz")) return;
+
         if (manualMode)
         {
             motorData.input = velocityL;

@@ -47,6 +47,9 @@ public class MaruzPositionController : MonoBehaviour
 
     private void Update()
     {
+        // Роботом управляет Python-скрипт (см. RSMA.uDTP.ExternalControl)
+        if (ExternalControl.IsActive("Maruz")) return;
+
         robotPose = DataBroker.GetState<RSMA.uDTP.Topics.Pose>("MaruzPose");
         targetPoint = DataBroker.GetState<TrajectoryPoint>("MaruzTargetPoint");
 

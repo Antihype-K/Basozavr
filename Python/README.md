@@ -63,6 +63,66 @@ python main.py --host 10.0.0.5   # Unity на другой машине
 
 ---
 
+## Управление сценой из Python-скриптов
+
+Пакет `scene` — простой API для своих скриптов: дроны, робот Maruz, датчики.
+Координаты как в Unity: **X — вправо, Y — вверх, Z — вперед**.
+
+```python
+import _rsma_path                     # в папке Python/Scripts: подключает Python/Source
+from scene import connect
+
+with connect() as sim:                # --host/--port из командной строки, --offline — без Unity
+    drone = sim.drone(1)
+    drone.fly_to(0, 5, 10)            # ждет прилета, возвращает True/False
+    drone.land()
+
+    maruz = sim.maruz()
+    maruz.drive(0.5, duration=2)      # м/с вперед, 2 с
+    maruz.turn(1.0, duration=1)       # рад/с, > 0 — влево
+    maruz.go_to(3, 4)                 # в точку (x, z)
+    maruz.follow([(0, 0), (2, 0), (2, 2)])
+
+    print(sim.lidar().min_distance(), sim.rangefinder().distance())
+    sim.camera(0).save("frame.png")
+```
+
+| Объект | Что умеет | Топики |
+|---|---|---|
+| `sim.drone(i)` | `position`, `set_target`, `fly_to`, `move_by`, `hover`, `land` | `DronePose_i` / `DroneTargetPose_i` |
+| `sim.maruz()` | `position`, `heading`, `drive`, `turn`, `set_wheels`, `stop`, `go_to`, `rotate_to`, `follow`, `release` | `MaruzPose` / `MaruzTargetVelocity`, `MaruzML`, `MaruzMR` |
+| `sim.lidar(topic)` | `scan`, `ranges`, `angles`, `points`, `min_distance`, `distance_at` | `LaserScan128/256` |
+| `sim.rangefinder(topic)` | `distance` | `Float32` |
+| `sim.camera(i)` | `frame` (numpy H×W×3), `save` | `Camera_i` |
+| `sim` | `sleep`, `wait_until`, `time`, `get`/`publish` любого топика, `print` в консоль Unity, `restart_level`, `payload_pose`, `cable_force` | |
+
+**Примеры** в [`Scripts/`](Scripts): связь со сценой, квадрат дроном, формация дронов по кругу,
+езда Maruz, объезд точек, объезд препятствий по лидару, снимок с камеры.
+
+```bash
+cd Python/Scripts
+python 02_drone_square.py              # Unity на localhost:5555
+python 05_maruz_waypoints.py --offline # без Unity
+python -m scene --offline              # интерактивная консоль (из Python/Source)
+```
+
+**Запуск из Unity.** В терминале RSMA: `py` — список скриптов, `py 04_maruz_drive.py` — запуск
+(вывод идет в консоль Unity), `py_stop` — остановить. Интерпретатор задается переменной окружения
+`RSMA_PYTHON` (по умолчанию `python` в Windows, `python3` в Linux/macOS), папка скриптов —
+`RSMA_PYTHON_SCRIPTS` (по умолчанию `<проект>/Python/Scripts`).
+
+**Кто управляет роботом.** У Maruz в сцене есть свои контроллеры (`MaruzVelocity`,
+`MaruzPositionController`, `MaruzTrajectoryPlanner`), которые каждый кадр пишут в те же топики.
+Когда скрипт отдает команду, он берет «аренду» управления (топик `ExternalControl_Maruz`,
+`Assets/Scripts/uDTP/ExternalControl.cs`): пока она продлевается (каждые 0.1 с, в фоне),
+эти контроллеры молчат, а при `set_wheels` отключается и `MotionController`. Если скрипт
+завершился или завис, через 0.5 с управление само возвращается Unity; `maruz.release()` —
+вернуть сразу. Дронам аренда не нужна: их цель задает только Python.
+
+**Офлайн-режим** (`--offline`, `Simulation.offline()`) — модель сцены без Unity: дрон с PID из
+`Quadrocopter.cs`, кинематика Maruz по `MotionController.cs`, статичные лидар и дальномер.
+Время в нем виртуальное (`sim.sleep` продвигает модель), так что скрипты отлаживаются быстро.
+
 ## Топики uDTP
 
 | Топик | Тип | Направление | Источник в Unity |
@@ -111,7 +171,8 @@ Python/
 ├── requirements.txt          # зависимости (requirements-dev.txt — для тестов)
 ├── pyproject.toml            # настройки pytest и ruff
 ├── Docs/Description.md       # описание алгоритмов
-├── tests/                    # pytest: типы, сериализация, клиент, алгоритмы, полная миссия
+├── Scripts/                  # примеры скриптов управления сценой (python 02_drone_square.py)
+├── tests/                    # pytest: типы, сериализация, клиент, алгоритмы, миссия, scene API, interop
 └── Source/
     ├── main.py               # точка входа: контур управления роем
     ├── config.py             # параметры миссии
@@ -124,13 +185,15 @@ Python/
     │   ├── Types/            # Vector3, Quaternion, Transform (как в Unity)
     │   ├── uDTP/Topics/      # топики uDTP
     │   └── SLAM/             # адаптер лидара для BreezySLAM (см. requirements-slam.txt)
+    ├── scene/                # API для скриптов управления: Simulation, Drone, Maruz, датчики
     ├── control/
     │   ├── swarm_controller.py     # цикл управления (step / run)
     │   ├── flight_state_machine.py # LIFT → TRAJECTORY → HOVER → LAND → LAND_DRONES → FINISHED
     │   ├── trajectory.py           # S-образный профиль с ограничением скорости, ускорения и рывка
     │   ├── anti_sway.py            # гашение раскачки груза
     │   └── formation.py            # N-угольная формация
-    ├── sim/swarm_sim.py      # физическая модель сцены (дроны, тросы, груз) для --sim и тестов
+    ├── sim/swarm_sim.py      # физическая модель сцены доставки (дроны, тросы, груз) для --sim и тестов
+    ├── sim/scene_sim.py      # офлайн-модель для скриптов (дроны, Maruz, датчики)
     └── utils/                # CSV/консольный логгер, пересчет систем координат
 ```
 
@@ -138,7 +201,7 @@ Python/
 
 ```bash
 pip install -r requirements-dev.txt
-pytest          # ~75 тестов, ~1 мин (включая полные миссии в модели)
+pytest          # ~115 тестов, ~1.5 мин (включая полные миссии и примеры скриптов)
 ruff check .
 ```
 
