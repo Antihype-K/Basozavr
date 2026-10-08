@@ -1,0 +1,23 @@
+[project]
+name = "rsma-swarm-delivery"
+version = "0.2.0"
+description = "Python control loop and RSMA (uDTP/NetMQ) client for the Basozavr swarm delivery scene"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "pyzmq>=25.1", "pandas>=2.0", "matplotlib>=3.8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["Source"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["Source", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["RSMA", "control", "utils", "sim", "config"]

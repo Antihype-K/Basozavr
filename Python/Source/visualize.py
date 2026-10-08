@@ -1,21 +1,29 @@
+"""
+4-панельный дашборд телеметрии полета.
+
+    python visualize.py                         # последний лог из logs/
+    python visualize.py logs/flight_log_X.csv   # конкретный файл
+    python visualize.py --save report.png       # сохранить в файл без окна
+"""
+
+import argparse
 import glob
 import os
-import pandas as pd
+
+import matplotlib
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 
 
-def visualize_latest_flight():
-    # 1. Поиск последнего CSV файла в папке logs/
-    log_files = sorted(glob.glob("logs/*.csv"))
-    if not log_files:
-        print("[Visualizer] Ошибка: Файлы логов в папке 'logs/' не найдены!")
-        return
+def find_latest_log(log_dir: str = "logs") -> str | None:
+    """Самый свежий flight_log_*.csv (по времени изменения)."""
+    log_files = glob.glob(os.path.join(log_dir, "*.csv"))
+    return max(log_files, key=os.path.getmtime) if log_files else None
 
-    latest_log = log_files[-1]
-    print(f"[Visualizer] Загрузка телеметрии из файла: {latest_log}")
 
-    df = pd.read_csv(latest_log)
+def plot_flight(df: pd.DataFrame, title: str):
+    """Строит 4-панельный дашборд и возвращает figure."""
+    import matplotlib.pyplot as plt
 
     # Определяем количество дронов по колонкам в CSV
     drone_cols = [c for c in df.columns if c.startswith("drone_") and c.endswith("_x")]
@@ -24,7 +32,7 @@ def visualize_latest_flight():
 
     # Создаем единое окно 2x2
     fig = plt.figure(figsize=(16, 10))
-    fig.suptitle(f"Анализ полета роя: {os.path.basename(latest_log)}", fontsize=14, fontweight="bold")
+    fig.suptitle(f"Анализ полета роя: {title}", fontsize=14, fontweight="bold")
 
     # Палитра цветов для дронов
     colors = plt.cm.tab10(np.linspace(0, 1, max(num_drones, 6)))
@@ -33,7 +41,7 @@ def visualize_latest_flight():
     # 1. 3D ТРАЕКТОРИЯ (Слева вверху)
     # -------------------------------------------------------------------------
     ax1 = fig.add_subplot(2, 2, 1, projection='3d')
-    
+
     # Траектории всех дронов
     for d_id in range(1, num_drones + 1):
         ax1.plot(
@@ -121,9 +129,40 @@ def visualize_latest_flight():
     ax4.grid(True)
 
     # Оптимизация отступов
-    plt.tight_layout()
-    plt.show()
+    fig.tight_layout()
+    return fig
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Дашборд телеметрии полета роя")
+    parser.add_argument("log", nargs="?", help="CSV-лог (по умолчанию — самый свежий в --log-dir)")
+    parser.add_argument("--log-dir", default="logs")
+    parser.add_argument("--save", metavar="FILE", help="сохранить дашборд в файл (png/pdf/svg) вместо показа окна")
+    args = parser.parse_args(argv)
+
+    log_path = args.log or find_latest_log(args.log_dir)
+    if not log_path or not os.path.exists(log_path):
+        print(f"[Visualizer] Ошибка: файлы логов в папке '{args.log_dir}/' не найдены!")
+        return 1
+
+    print(f"[Visualizer] Загрузка телеметрии из файла: {log_path}")
+    df = pd.read_csv(log_path)
+    if df.empty:
+        print("[Visualizer] Ошибка: лог пустой")
+        return 1
+
+    if args.save:
+        matplotlib.use("Agg")
+    fig = plot_flight(df, os.path.basename(log_path))
+
+    if args.save:
+        fig.savefig(args.save, dpi=120)
+        print(f"[Visualizer] Дашборд сохранен: {args.save}")
+    else:
+        import matplotlib.pyplot as plt
+        plt.show()
+    return 0
 
 
 if __name__ == "__main__":
-    visualize_latest_flight()
+    raise SystemExit(main())

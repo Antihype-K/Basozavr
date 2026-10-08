@@ -1,10 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
 from RSMA.Types.Vector3 import Vector3
 
-import time
 
 @dataclass
 class TrajectoryPoint:
-    timestamp: int
-    position: Vector3
+    """Mirror of RSMA.uDTP.Topics.TrajectoryPoint."""
+
+    timestamp: int = 0
+    position: Vector3 = field(default_factory=Vector3)
     targetVelocity: float = 0.0

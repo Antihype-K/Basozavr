@@ -1,0 +1,32 @@
+name: Python
+
+on:
+  push:
+    paths: ["Python/**", ".github/workflows/python.yml"]
+  pull_request:
+    paths: ["Python/**", ".github/workflows/python.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: Python
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          sparse-checkout: |
+            Python
+            .github
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest
+        env:
+          MPLBACKEND: Agg

@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
-import math
 
 @dataclass
 class Float32:
-    value: float
-    timestamp: int
+    """Mirror of RSMA.uDTP.Topics.Float32."""
+
+    value: float = 0.0
+    timestamp: int = 0
