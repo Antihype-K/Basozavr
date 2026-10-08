@@ -42,3 +42,21 @@ UserSettings/EditorUserSettings.asset
 UserSettings/Layouts/CurrentMaximizeLayout.dwlt
 UserSettings/Layouts/default-2022.dwlt
 UserSettings/Search.settings
+
+# IDE-generated solutions (Unity regenerates them, names depend on the clone folder)
+*.slnx
+
+# Unity editor leftovers
+/Assets/_Recovery/
+/Assets/_Recovery.meta
+/UIElementsSchema/
+Cache.lru
+
+# Recordings written by TransformWriter into Assets/ at runtime
+/Assets/*.csv
+/Assets/*.csv.meta
+
+# Python
+__pycache__/
+*.pyc
+.venv/
