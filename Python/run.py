@@ -171,6 +171,9 @@ def show_figure(fig, png: Path) -> None:
         pass
 
 
+OLD_RSMA_AFTER = 3.0  # с: груз виден, а этапа миссии нет — RSMA собрана из старых скриптов
+
+
 def monitor(host: str, port: int, duration: float | None, plot: bool = True,
             log_dir: Path = Path("logs"), show: bool = True, parameters: dict | None = None) -> FlightRecorder:
     """
@@ -183,6 +186,8 @@ def monitor(host: str, port: int, duration: float | None, plot: bool = True,
     start = time.monotonic()
     last_print = -1.0
     last_phase = None
+    first_payload = None
+    warned_old = False
     with RSMAClient(host=host, port=port, timeout=1000) as client:
         while duration is None or time.monotonic() - start < duration:
             now = time.monotonic() - start
@@ -204,6 +209,14 @@ def monitor(host: str, port: int, duration: float | None, plot: bool = True,
                 recorder.add(now, phase, payload.position, status.distanceToFinish if has_status else 0.0,
                              tension, finish=status.finish if has_status else None, telemetry=telemetry)
 
+            if is_published(payload) and first_payload is None:
+                first_payload = now
+            if not has_status and not warned_old and first_payload is not None and now - first_payload > OLD_RSMA_AFTER:
+                warned_old = True
+                print("\n!!! RSMA не сообщает этап миссии: запущена старая сборка RSMA (или Play нажат в старой Unity).\n"
+                      "!!! Параметры (флаги) в ней не применяются, графика после доставки не будет.\n"
+                      "!!! Закройте RSMA и пересоберите: rsma.bat --build  (или запустите в редакторе: rsma.bat --editor)\n",
+                      flush=True)
             if phase != last_phase:
                 log.info("Этап: %s", phase)
                 last_phase = phase

@@ -91,6 +91,15 @@ def test_monitor_prints_progress(capsys):
     assert "Перелёт" in out and "до площадки   12.5 м" in out and "груз ( 100.0,  12.0,   70.0)" in out
 
 
+def test_monitor_warns_about_old_rsma(capsys, monkeypatch):
+    monkeypatch.setattr(run, "OLD_RSMA_AFTER", 0.3)
+    with MockServer(port=0, host="127.0.0.1") as server:
+        server.broker.publish_obj("PayloadPose", Pose(position=Vector3(100, 12, 70), timestamp=1))
+        run.monitor("127.0.0.1", server.port, duration=1.2)
+    out = capsys.readouterr().out
+    assert out.count("старая сборка RSMA") == 1 and "rsma.bat --build" in out
+
+
 @pytest.mark.parametrize("python_control", [False, True])
 def test_launch_passes_config_and_mode(tmp_path, monkeypatch, python_control):
     from test_launcher import FAKE, free_port
