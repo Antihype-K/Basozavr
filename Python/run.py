@@ -11,6 +11,7 @@
     python run.py --drones 4 --fail-drone 2 --fail-time 40
     python run.py --config my_mission.json --speed 5
     python run.py --python-control                  # полетом управляет Python (Source/main.py)
+    python run.py --no-plot                         # без графика после доставки
 
 Запускается собранное RSMA-приложение сцены 1 (Builds/SwarmDelivery) — редактор Unity не нужен.
 Собрать его один раз (и после изменений в Unity-скриптах): python run.py --build
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "Source"))
 from RSMA.Client import RSMAClient  # noqa: E402
 from RSMA.uDTP import is_published  # noqa: E402
 from RSMA.uDTP.Topics import Float32, MissionStatus, Pose  # noqa: E402
+from scene.flight_report import FlightRecorder, report_paths  # noqa: E402
 from scene.launcher import DEFAULT_SCENE, UnityLaunchError, build_player, launch_unity  # noqa: E402
 
 log = logging.getLogger("run")
@@ -105,6 +107,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="полетом управляет Python-контроллер (Source/main.py), а не встроенная миссия")
     g.add_argument("--duration", type=float, default=None, help="сколько секунд показывать ход полета")
     g.add_argument("--no-monitor", action="store_true", help="запустить и сразу выйти")
+    g.add_argument("--no-plot", action="store_true",
+                   help="не строить график после доставки (по умолчанию: график и выход после первой доставки)")
+    g.add_argument("--log-dir", type=Path, default=Path(__file__).resolve().parent / "logs",
+                   help="куда сохранять CSV и PNG отчета (Python/logs)")
     g.add_argument("--build", action="store_true",
                    help="собрать RSMA-приложение сцены 1 (один раз и после изменений в Unity), затем запустить")
     g.add_argument("--editor", action="store_true", help="запускать в редакторе Unity, а не собранное приложение")
@@ -136,32 +142,83 @@ def build_config(args: argparse.Namespace) -> dict:
     return {k: v for k, v in config.items() if v}
 
 
-def monitor(host: str, port: int, duration: float | None) -> None:
-    """Печатает ход полета: этап, расстояние до площадки, высота груза, натяжение тросов."""
+def show_figure(fig, png: Path) -> None:
+    """Показывает график в окне; если окна нет (нет Tk и т.п.) — открывает PNG системной программой."""
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    if matplotlib.get_backend().lower() not in ("agg", "pdf", "svg", "ps", "cairo", "template"):
+        plt.show()
+        return
+    import os
+    import subprocess
+
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(png)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(png)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def monitor(host: str, port: int, duration: float | None, plot: bool = True,
+            log_dir: Path = Path("logs"), show: bool = True) -> FlightRecorder:
+    """
+    Печатает ход полета (этап, расстояние до площадки, груз, натяжение тросов) и записывает его.
+    С plot=True после успешной доставки (завершилась «Выгрузка») сохраняет CSV и PNG-отчет,
+    показывает график и возвращает запись.
+    """
+    recorder = FlightRecorder()
     start = time.monotonic()
+    last_print = -1.0
     last_phase = None
     with RSMAClient(host=host, port=port, timeout=1000) as client:
         while duration is None or time.monotonic() - start < duration:
+            now = time.monotonic() - start
             requests = [("MissionStatus", MissionStatus), ("PayloadPose", Pose)]
             requests += [(f"CableForce_{i}", Float32) for i in range(1, 17)]
             status, payload, *forces = client.get_states(requests)
             if status is None and payload is None:
-                log.warning("Нет связи со сценой (%s)", client.last_error)
-            else:
-                tension = sum(f.value for f in forces if is_published(f))
-                phase = status.phase if is_published(status) else "—"
-                line = (f"[{time.monotonic() - start:6.1f} с] {phase:<24} "
-                        f"до площадки {status.distanceToFinish:6.1f} м  " if is_published(status) else
-                        f"[{time.monotonic() - start:6.1f} с] {phase:<24} ")
+                if now - last_print >= 1.0:
+                    log.warning("Нет связи со сценой (%s)", client.last_error)
+                    last_print = now
+                time.sleep(0.2)
+                continue
+
+            tension = sum(f.value for f in forces if is_published(f))
+            has_status = is_published(status)
+            phase = status.phase if has_status else "—"
+            if is_published(payload):
+                recorder.add(now, phase, payload.position, status.distanceToFinish if has_status else 0.0,
+                             tension, finish=status.finish if has_status else None)
+
+            if phase != last_phase:
+                log.info("Этап: %s", phase)
+                last_phase = phase
+            if now - last_print >= 1.0:
+                last_print = now
+                line = f"[{now:6.1f} с] {phase:<24} "
+                if has_status:
+                    line += f"до площадки {status.distanceToFinish:6.1f} м  "
                 if is_published(payload):
                     p = payload.position
                     line += f"груз ({p.x:6.1f}, {p.y:5.1f}, {p.z:6.1f})  "
-                line += f"Σ натяжение {tension:5.0f} Н"
-                if phase != last_phase:
-                    log.info("Этап: %s", phase)
-                    last_phase = phase
-                print(line, flush=True)
-            time.sleep(1.0)
+                print(line + f"Σ натяжение {tension:5.0f} Н", flush=True)
+
+            if plot and recorder.delivered:
+                csv_path, png_path = report_paths(log_dir)
+                recorder.save_csv(csv_path)
+                fig = recorder.plot(png_path)
+                info = recorder.summary()
+                print(f"\nГруз доставлен за {info['time']:.0f} с (путь {info['path']:.0f} м). "
+                      f"График: {png_path}, данные: {csv_path}", flush=True)
+                if show:
+                    show_figure(fig, png_path)
+                return recorder
+            time.sleep(0.2)
+    return recorder
 
 
 def main(argv=None) -> int:
@@ -186,14 +243,21 @@ def main(argv=None) -> int:
     if args.python_control:
         import main as controller  # Python/Source/main.py
 
-        return controller.main(["--no-launch", "--host", args.host, "--port", str(args.port)])
+        code = controller.main(["--no-launch", "--host", args.host, "--port", str(args.port)])
+        if code == 0 and not args.no_plot:
+            import visualize  # Python/Source/visualize.py: дашборд последнего CSV-лога контроллера
+
+            visualize.main(["--log-dir", "logs"])
+        return code
 
     if args.no_monitor:
         print("Сцена запущена. Ход полета виден в RSMA (HUD слева сверху).")
         return 0
-    print("Сцена запущена, полет выполняет RSMA. Ctrl+C — выйти (сцена продолжит работать).")
+    print("Сцена запущена, полет выполняет RSMA. "
+          + ("После доставки груза откроется график. " if not args.no_plot else "")
+          + "Ctrl+C — выйти (сцена продолжит работать).")
     try:
-        monitor(args.host, args.port, args.duration)
+        monitor(args.host, args.port, args.duration, plot=not args.no_plot, log_dir=args.log_dir)
     except KeyboardInterrupt:
         pass
     return 0
