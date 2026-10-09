@@ -193,6 +193,13 @@ namespace RSMA.NetMQ
                     externalControl = ExternalControlActive
                 });
             }
+            else if (command.StartsWith("SetMissionConfig:"))
+            {
+                // Параметры миссии из Python (см. MissionConfig.cs): применятся при следующей загрузке сцены
+                string json = command.Substring("SetMissionConfig:".Length).Trim();
+                Environment.SetEnvironmentVariable("RSMA_MISSION_CONFIG", json.Length > 0 ? json : null);
+                return "OK: Mission config set";
+            }
             else if (command.StartsWith("LoadScene:"))
             {
                 // LoadScene:Assets/1.unity|python — загрузить сцену (из Build Settings),

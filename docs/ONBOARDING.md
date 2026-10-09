@@ -65,7 +65,13 @@ Builds\SwarmDeliveryWin\SwarmDelivery.exe
    python swarm_check.py --drones 6 --duration 60 --csv flight.csv   # запись 60 с
    ```
    `[OK] OK: Server is running` — связь есть. Таймаут — сцена не запущена или у менеджера роя выключен `startServer`.
-4. **Управление из Python** (папка `Python/`, подробно — `Python/README.md`). Сцену вручную запускать не нужно:
+4. **Запуск из Python с параметрами** (`Python/run.py`): полет выполняет встроенная миссия сцены 1,
+   Python запускает сцену и передает параметры флагами — Unity при этом может быть закрыта, открыта или в Play:
+   ```bash
+   cd Python && source .venv/bin/activate
+   python run.py --speed 6 --height 15 --payload-mass 15     # все флаги: python run.py --help
+   ```
+5. **Управление из Python** (папка `Python/`, подробно — `Python/README.md`). Сцену вручную запускать не нужно:
    скрипт сам запускает Unity, открывает `Assets/1.unity` с ключом `-python` (внешнее управление у `SwarmDeliveryScene`)
    и нажимает Play; если сцена уже запущена — подключается к ней. Если редактора нет, но сцена собрана (`build.sh`),
    запускается `Builds/SwarmDelivery/SwarmDelivery.x86_64 -python`.

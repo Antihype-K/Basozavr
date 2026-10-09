@@ -14,21 +14,41 @@
 
 ## Быстрый старт
 
-Нужны **Unity 6000.3.16f1** (через Unity Hub) и **Python 3.10+**. Сцену вручную открывать не нужно:
-`main.py` и скрипты сами запускают Unity, открывают рабочую **сцену 1** (`Assets/1.unity`) в режиме
-управления из Python и нажимают Play (если сцена уже запущена — просто подключаются).
-Без Python сцена 1 выполняет встроенную миссию: откройте `Assets/1.unity` и нажмите Play (см. `docs/ONBOARDING.md`).
+Нужны **Unity 6000.3.16f1** (через Unity Hub) и **Python 3.10+**.
 
 ```bash
 cd Python
-python -m venv .venv && source .venv/bin/activate   # Windows: ./.venv/Scripts/Activate.ps1
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cd Source
-python main.py          # запустит сцену и выполнит миссию доставки
+
+python run.py                          # запустить миссию доставки в RSMA (сцена 1)
+python run.py --speed 6 --height 15    # с параметрами
+python run.py --help                   # все параметры
 ```
 
-Без Unity контур можно запустить на встроенной физической модели сцены: `python main.py --sim --fast`.
-Подробнее о параметрах, топиках и API клиента — в [Python/README.md](Python/README.md).
+`run.py` сам приводит Unity к сцене 1 (`Assets/1.unity`) и нажимает Play — Unity может быть
+закрыта, открыта или уже играть другую сцену. Полет выполняет сама RSMA (встроенная миссия
+`SwarmScriptedFlight`), Python только передает параметры и показывает ход полета в терминале.
+
+| Флаг | Что задает | По умолчанию |
+|---|---|---|
+| `--speed` / `--climb-speed` | крейсерская / вертикальная скорость, м/с | 4 / 2.5 |
+| `--height` | высота перелета груза, м | 12 |
+| `--accel` / `--climb-accel` | ускорение по горизонтали / вертикали, м/с² | 0.5 / 0.7 |
+| `--base X Z` / `--delivery X Z` | база и площадка доставки (координаты Unity) | 115 85 / 75 45 |
+| `--loop` / `--no-loop` | повторять рейсы | да |
+| `--release` / `--no-release` | отцеплять груз на площадке | да |
+| `--unload-time`, `--hover-time`, `--drop-height` | выгрузка, зависание, высота выгрузки | 3 с, 1.5 с, 0.55 м |
+| `--drones`, `--payload-mass`, `--cable-length`, `--radius` | рой и груз | 6, 12 кг, 2 м, 1.414 м |
+| `--kp --ki --kd`, `--cable-stiffness` | ПИД дронов, жесткость троса | 40/12/14, 1000 Н/м |
+| `--wind`, `--gust`, `--wind-dir X Z` | ветер, порывы, направление | 0, 0, 0 1 |
+| `--fail-drone N --fail-time T` | отказ дрона N в момент T | нет |
+| `--config file.json` | параметры из файла (`{"delivery": {...}, "environment": {...}}`) | |
+| `--python-control` | полетом управляет Python-контроллер (`Source/main.py`) | |
+
+Параметры применяются поверх значений в сцене (`Assets/Scripts/UtilitiesForUnity/MissionConfig.cs`)
+и сбрасываются после выхода из Play. Без Python: откройте `Assets/1.unity` и нажмите Play.
+Подробнее о Python-части — в [Python/README.md](Python/README.md).
 
 ### Свои скрипты управления
 

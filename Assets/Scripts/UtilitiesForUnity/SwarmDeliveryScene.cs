@@ -65,6 +65,8 @@ public class SwarmDeliveryScene : MonoBehaviour
     void Awake()
     {
         environment = GetComponent<RSMASwarmEnvironment>();
+        // Параметры, заданные из Python (python Python/run.py --speed ... --height ...)
+        MissionConfig.Apply(this, environment);
         if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-python") >= 0) externalControl = true;
         // Сцену загрузил Python командой LoadScene:...|python
         if (RSMA.NetMQ.NetMQServer.ExternalControlRequested) externalControl = true;
@@ -228,8 +230,33 @@ public class SwarmDeliveryScene : MonoBehaviour
         cam.transform.LookAt(cameraFocus.position + Vector3.up * follow.lookAtHeight);
     }
 
+    private float statusTimer;
+
+    // Статус встроенной миссии для Python (python Python/run.py показывает его в терминале)
+    private void PublishStatus()
+    {
+        statusTimer -= Time.deltaTime;
+        if (statusTimer > 0.0f) return;
+        statusTimer = 0.2f;
+
+        Vector3 payload = flight.payload != null ? flight.payload.position : basePoint;
+        Vector2 toDelivery = new Vector2(deliveryPoint.x - payload.x, deliveryPoint.z - payload.z);
+        float leg = Vector2.Distance(new Vector2(basePoint.x, basePoint.z), new Vector2(deliveryPoint.x, deliveryPoint.z));
+        RSMA.uDTP.DataBroker.Publish("MissionStatus", new RSMA.uDTP.Topics.MissionStatus
+        {
+            timestamp = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            phase = flight.CurrentLabel,
+            progress = leg > 0.01f ? Mathf.Clamp01(1.0f - toDelivery.magnitude / leg) : 1.0f,
+            distanceToFinish = toDelivery.magnitude,
+            setpoint = payload,
+            finish = deliveryPoint
+        });
+    }
+
     void Update()
     {
+        if (!externalControl && flight != null) PublishStatus();
+
         if (cameraFocus == null) return;
 
         if (externalControl)

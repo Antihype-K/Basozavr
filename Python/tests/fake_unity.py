@@ -5,6 +5,7 @@ the offline swarm scene over the RSMA NetMQ protocol on $RSMA_PORT, like ServerA
 FAKE_UNITY_MODE=fail makes it write a log and exit, like Unity refusing an open project.
 """
 
+import json
 import os
 import sys
 import threading
@@ -18,6 +19,7 @@ from sim.scene_sim import OfflineScene  # noqa: E402
 
 args = sys.argv[1:]
 Path(os.environ["FAKE_UNITY_ARGS"]).write_text("\n".join(args), encoding="utf-8")
+Path(os.environ["FAKE_UNITY_ARGS"] + ".config").write_text(os.environ.get("RSMA_MISSION_CONFIG", ""), encoding="utf-8")
 log_file = Path(args[args.index("-logFile") + 1])
 
 if os.environ.get("FAKE_UNITY_MODE") == "fail":
@@ -29,7 +31,10 @@ server = MockServer(port=int(os.environ["RSMA_PORT"]), host="127.0.0.1")
 # Which scene the "editor" ended up in: what was asked, or FAKE_UNITY_SCENE (e.g. the last opened one)
 server.active_scene = os.environ.get("FAKE_UNITY_SCENE") or (
     args[args.index("-rsmaScene") + 1] if "-rsmaScene" in args else "Assets/1.unity")
-server.external_control = "-python" in args and "FAKE_UNITY_SCENE" not in os.environ
+config = json.loads(os.environ.get("RSMA_MISSION_CONFIG") or "{}")
+server.mission_config = config
+server.external_control = ("-python" in args or bool(config.get("delivery", {}).get("externalControl"))) \
+    and "FAKE_UNITY_SCENE" not in os.environ
 scene = OfflineScene(server.broker)
 server.start()
 

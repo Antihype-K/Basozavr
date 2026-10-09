@@ -83,34 +83,47 @@ def scene_info(host: str = "localhost", port: int = 5555, timeout_ms: int = 1000
 
 
 def ensure_scene_loaded(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int = 5555,
-                        python_control: bool | None = None, timeout: float = 120.0) -> None:
+                        python_control: bool | None = None, timeout: float = 120.0,
+                        force_reload: bool = False, settle_time: float = 5.0) -> None:
     """
     Проверяет, что в Unity открыта нужная сцена в режиме управления из Python; если нет —
     переключает ее (команда LoadScene) и ждет загрузки. Бросает UnityLaunchError по таймауту.
     """
     if python_control is None:
         python_control = scene == DEFAULT_SCENE  # режим -python есть у SwarmDeliveryScene сцены 1
+    if scene != DEFAULT_SCENE:
+        python_control = False  # в других сценах режима внешнего управления нет
 
     def ready(info: dict) -> bool:
-        return info.get("scene") == scene and (bool(info.get("externalControl")) or not python_control)
+        return info.get("scene") == scene and bool(info.get("externalControl")) == bool(python_control)
 
     info = scene_info(host, port)
+    # Сразу после старта сцена может еще не сообщить себя или свой режим: даем ей несколько секунд
+    settle_until = time.monotonic() + settle_time
+    while info is not None and not ready(info) and not force_reload and time.monotonic() < settle_until:
+        time.sleep(0.5)
+        info = scene_info(host, port)
     if info is None:
         log.warning("Unity не сообщает открытую сцену (старая версия скриптов). Проверьте сами, что открыта %s"
                     "%s", scene, " с включенным externalControl у SwarmDeliveryScene" if python_control else "")
         return
-    if ready(info):
-        log.info("В Unity открыта %s%s", scene, ", управление из Python включено" if python_control else "")
+    mode = "управление из Python" if python_control else "встроенная миссия"
+    if ready(info) and not force_reload:
+        log.info("В Unity открыта %s (%s)", scene, mode)
         return
 
-    log.warning("В Unity открыта %s (управление из Python: %s) — переключаю на %s",
-                info.get("scene") or "?", "да" if info.get("externalControl") else "нет", scene)
+    if ready(info):
+        log.info("Перезапускаю %s с новыми параметрами", scene)
+    else:
+        log.warning("В Unity открыта %s (управление из Python: %s) — переключаю на %s (%s)",
+                    info.get("scene") or "?", "да" if info.get("externalControl") else "нет", scene, mode)
     with RSMAClient(host=host, port=port, timeout=2000, retries=0) as client:
         reply = client.send_command(f"LoadScene:{scene}" + ("|python" if python_control else ""))
     if not reply.startswith("OK"):
         raise UnityLaunchError(f"Не удалось переключить сцену: {reply}")
 
     deadline = time.monotonic() + timeout
+    time.sleep(1.0)  # дать сцене начать перезагрузку, чтобы не принять старое состояние за новое
     while time.monotonic() < deadline:
         time.sleep(0.5)
         info = scene_info(host, port, timeout_ms=500)
@@ -204,63 +217,26 @@ def _log_tail(path: Path | None, lines: int = 15) -> str:
     return "\n".join(text[-lines:])
 
 
-def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int = 5555,
-                 unity: str | Path | None = None, player: str | Path | None = None,
-                 project: Path | None = None, timeout: float = 900.0,
-                 log_path: Path | None = None) -> UnityInstance:
-    """
-    Гарантирует, что сцена запущена и сервер RSMA отвечает. Возвращает UnityInstance
-    (process=None, если сцена уже работала). Бросает UnityLaunchError с подсказкой, что делать.
-    """
-    if server_alive(host, port):
-        log.info("Unity уже запущена (%s:%d)", host, port)
-        ensure_scene_loaded(scene, host, port)
-        return UnityInstance()
-
-    if host not in LOCAL_HOSTS:
-        raise UnityLaunchError(f"RSMA на {host}:{port} не отвечает. Запустить Unity на другой машине "
-                               "из скрипта нельзя: откройте сцену там и нажмите Play")
-
+def editor_is_open(project: Path | None = None) -> bool:
+    """Проект открыт в редакторе Unity (пока редактор работает, в Temp/ лежит UnityLockfile)."""
     project = Path(project) if project is not None else PROJECT_ROOT
-    log_path = Path(log_path) if log_path else project / "Logs" / "rsma_python_launch.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    return (project / "Temp" / "UnityLockfile").exists()
 
-    if player is not None:
-        cmd = [str(player), PYTHON_CONTROL_ARG, "-logFile", str(log_path)]
-        what = f"плеер {player}"
-    else:
-        editor = Path(unity) if unity else find_unity_editor(project=project)
-        if (editor is None or not editor.exists()) and unity is None and find_built_player(project) is not None:
-            player = find_built_player(project)
-            log.info("Редактор Unity не найден, запускаю собранную сцену %s", player)
-            return launch_unity(scene=scene, host=host, port=port, player=player, project=project,
-                                timeout=timeout, log_path=log_path)
-        if editor is None or not editor.exists():
-            version = project_unity_version(project)
-            installed = ", ".join(sorted(installed_editors())) or "нет"
-            raise UnityLaunchError(
-                f"Не найден редактор Unity {version} (установлены: {installed}).\n"
-                f"Установите {version} через Unity Hub или укажите путь: "
-                f"export RSMA_UNITY=/путь/к/Editor/Unity (или параметр --unity), "
-                f"либо соберите сцену: ./build.sh (Windows: build.bat)")
-        if (project / "Temp" / "UnityLockfile").exists():
-            log.warning("Похоже, проект уже открыт в Unity. Если запуск не удастся — "
-                        "откройте сцену в той Unity и нажмите Play")
-        cmd = [str(editor), "-projectPath", str(project),
-               "-executeMethod", "RSMALauncher.PlayScene", "-rsmaScene", scene,
-               PYTHON_CONTROL_ARG, "-logFile", str(log_path)]
-        what = f"Unity {editor}"
 
-    env = os.environ.copy()
-    env["RSMA_PORT"] = str(port)  # ServerApp поднимет сервер на этом порту
-    log.info("Запускаю %s, сцена %s", what, scene)
-    process = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               cwd=str(project))
+def _effective_config(scene: str, python_control: bool, mission_config: dict | None) -> dict:
+    """Параметры миссии + режим управления (SwarmDeliveryScene.externalControl) для сцены 1."""
+    config = json.loads(json.dumps(mission_config or {}))
+    if scene == DEFAULT_SCENE:
+        config.setdefault("delivery", {})["externalControl"] = python_control
+    return config
 
+
+def _wait_for_server(host: str, port: int, timeout: float, process: subprocess.Popen | None = None,
+                     log_path: Path | None = None, waiting_for: str = "Unity") -> None:
     start = time.monotonic()
     last_report = start
     while not server_alive(host, port, timeout_ms=500):
-        if process.poll() is not None:
+        if process is not None and process.poll() is not None:
             tail = _log_tail(log_path)
             hint = ""
             if "another Unity instance" in tail or "already open" in tail:
@@ -269,13 +245,108 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
                                    f"Лог: {log_path}\n{tail}")
         now = time.monotonic()
         if now - start > timeout:
-            raise UnityLaunchError(f"Сцена не запустилась за {timeout:.0f} с. Лог: {log_path}\n{_log_tail(log_path)}")
+            raise UnityLaunchError(f"{waiting_for}: сервер RSMA не ответил за {timeout:.0f} с."
+                                   + (f" Лог: {log_path}\n{_log_tail(log_path)}" if log_path else ""))
         if now - last_report >= 15:
-            log.info("Unity загружается... %.0f с (первый запуск импортирует ассеты — это может занять минуты)",
-                     now - start)
+            log.info("%s... %.0f с", waiting_for, now - start)
             last_report = now
         time.sleep(1.0)
+    log.info("Сервер RSMA отвечает на %s:%d (%.0f с)", host, port, time.monotonic() - start)
 
-    log.info("Unity запущена за %.0f с, сервер RSMA отвечает на %s:%d", time.monotonic() - start, host, port)
-    ensure_scene_loaded(scene, host, port)
+
+def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int = 5555,
+                 unity: str | Path | None = None, player: str | Path | None = None,
+                 project: Path | None = None, timeout: float = 900.0,
+                 log_path: Path | None = None, python_control: bool = True,
+                 mission_config: dict | None = None) -> UnityInstance:
+    """
+    Приводит Unity к нужному состоянию: открыта сцена scene, нажат Play, сервер RSMA отвечает.
+
+    python_control=True  — сцена 1 ждет команд Python (SwarmDeliveryScene.externalControl);
+    python_control=False — сцена 1 выполняет встроенную миссию.
+    mission_config — параметры миссии ({"delivery": {...}, "environment": {...}}, см. MissionConfig.cs).
+
+    Работает в любом состоянии Unity:
+    * Unity в Play (любая сцена) — параметры и сцена меняются командами NetMQ;
+    * Unity открыта, но не в Play — запрос редактору через Temp/rsma_play_request.json;
+    * Unity закрыта — запускается редактор (или собранная игра) со сценой.
+
+    Возвращает UnityInstance (process=None, если Unity уже работала).
+    Бросает UnityLaunchError с подсказкой, что делать.
+    """
+    config = _effective_config(scene, python_control, mission_config)
+    config_json = json.dumps(config, ensure_ascii=False)
+    project = Path(project) if project is not None else PROJECT_ROOT
+
+    # 1. Unity уже в Play
+    if server_alive(host, port):
+        log.info("Unity уже запущена (%s:%d)", host, port)
+        if mission_config is not None or config:
+            with RSMAClient(host=host, port=port, timeout=2000, retries=0) as client:
+                reply = client.send_command(f"SetMissionConfig:{config_json}")
+            if not reply.startswith("OK"):
+                raise UnityLaunchError(
+                    "Unity в режиме Play, но скрипты в ней старые и не принимают параметры. "
+                    "Остановите Play, дождитесь перекомпиляции скриптов (после git pull) и запустите снова.")
+        ensure_scene_loaded(scene, host, port, python_control=python_control if scene == DEFAULT_SCENE else None,
+                            force_reload=mission_config is not None)
+        return UnityInstance()
+
+    if host not in LOCAL_HOSTS:
+        raise UnityLaunchError(f"RSMA на {host}:{port} не отвечает. Запустить Unity на другой машине "
+                               "из скрипта нельзя: откройте сцену там и нажмите Play")
+
+    # 2. Редактор открыт, но не в Play: просим его открыть сцену и нажать Play
+    if player is None and unity is None and editor_is_open(project):
+        request = project / "Temp" / "rsma_play_request.json"
+        request.write_text(json.dumps({"scene": scene, "config": config_json}, ensure_ascii=False), encoding="utf-8")
+        log.info("Unity открыта: прошу редактор открыть %s и нажать Play", scene)
+        try:
+            _wait_for_server(host, port, timeout=180.0, waiting_for="Жду, пока редактор запустит сцену")
+        except UnityLaunchError:
+            request.unlink(missing_ok=True)
+            raise UnityLaunchError(
+                f"Unity открыта, но не запустила сцену. Если скрипты еще компилируются — подождите и повторите; "
+                f"иначе откройте {scene} и нажмите Play вручную (или закройте Unity: скрипт запустит ее сам)") from None
+        ensure_scene_loaded(scene, host, port, python_control=python_control if scene == DEFAULT_SCENE else None)
+        return UnityInstance()
+
+    # 3. Unity закрыта: запускаем
+    log_path = Path(log_path) if log_path else project / "Logs" / "rsma_python_launch.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    extra_args = [PYTHON_CONTROL_ARG] if python_control else []
+
+    if player is not None:
+        cmd = [str(player), *extra_args, "-logFile", str(log_path)]
+        what = f"собранную сцену {player}"
+    else:
+        editor = Path(unity) if unity else find_unity_editor(project=project)
+        if (editor is None or not editor.exists()) and unity is None and find_built_player(project) is not None:
+            player = find_built_player(project)
+            log.info("Редактор Unity не найден, запускаю собранную сцену %s", player)
+            return launch_unity(scene=scene, host=host, port=port, player=player, project=project,
+                                timeout=timeout, log_path=log_path, python_control=python_control,
+                                mission_config=mission_config)
+        if editor is None or not editor.exists():
+            version = project_unity_version(project)
+            installed = ", ".join(sorted(installed_editors())) or "нет"
+            raise UnityLaunchError(
+                f"Не найден редактор Unity {version} (установлены: {installed}).\n"
+                f"Установите {version} через Unity Hub или укажите путь: "
+                f"export RSMA_UNITY=/путь/к/Editor/Unity (или параметр --unity), "
+                f"либо соберите сцену: ./build.sh (Windows: build.bat)")
+        cmd = [str(editor), "-projectPath", str(project),
+               "-executeMethod", "RSMALauncher.PlayScene", "-rsmaScene", scene,
+               *extra_args, "-logFile", str(log_path)]
+        what = f"Unity {editor}"
+
+    env = os.environ.copy()
+    env["RSMA_PORT"] = str(port)  # RSMASwarmEnvironment / ServerApp поднимут сервер на этом порту
+    env["RSMA_MISSION_CONFIG"] = config_json  # MissionConfig.cs применит параметры при старте сцены
+    log.info("Запускаю %s, сцена %s", what, scene)
+    process = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               cwd=str(project))
+    _wait_for_server(host, port, timeout, process, log_path,
+                     waiting_for="Unity загружается (первый запуск импортирует ассеты — это может занять минуты)")
+    ensure_scene_loaded(scene, host, port, python_control=python_control if scene == DEFAULT_SCENE else None)
     return UnityInstance(process=process, log_path=log_path)

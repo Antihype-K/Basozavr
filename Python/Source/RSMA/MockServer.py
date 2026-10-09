@@ -30,6 +30,7 @@ class MockServer:
         self.active_scene = "Assets/1.unity"
         self.external_control = True
         self.supports_scene_commands = True
+        self.mission_config: dict = {}  # SetMissionConfig (применяется при LoadScene)
         self.messages: list[str] = []  # PrintMessage log
         self.restart_count = 0
 
@@ -77,9 +78,17 @@ class MockServer:
             return "OK: Server is running"
         if self.supports_scene_commands and command.startswith("GetSceneInfo"):
             return json.dumps({"status": "ok", "scene": self.active_scene, "externalControl": self.external_control})
+        if self.supports_scene_commands and command.startswith("SetMissionConfig:"):
+            text = command[len("SetMissionConfig:"):].strip()
+            self.mission_config = json.loads(text) if text else {}
+            return "OK: Mission config set"
         if self.supports_scene_commands and command.startswith("LoadScene:"):
             scene, _, flag = command[len("LoadScene:"):].partition("|")
-            self.active_scene, self.external_control = scene.strip(), flag.strip() == "python"
+            self.active_scene = scene.strip()
+            # Как SwarmDeliveryScene: -python из LoadScene или externalControl из параметров миссии
+            from_config = bool(self.mission_config.get("delivery", {}).get("externalControl"))
+            self.external_control = flag.strip() == "python" or from_config
+            self.restart_count += 1
             return f"OK: Loading {self.active_scene}"
         return f"Error: Unknown command '{command}'"
 
