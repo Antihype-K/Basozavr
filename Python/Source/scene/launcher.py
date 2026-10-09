@@ -210,6 +210,42 @@ def find_built_player(project: Path | None = None) -> Path | None:
     return None
 
 
+def build_is_stale(player: Path, project: Path | None = None) -> bool:
+    """Скрипты проекта менялись после сборки (нужно пересобрать: python run.py --build)."""
+    project = Path(project) if project is not None else PROJECT_ROOT
+    built = player.stat().st_mtime
+    scripts = project / "Assets" / "Scripts"
+    return any(f.stat().st_mtime > built for f in scripts.rglob("*.cs")) if scripts.is_dir() else False
+
+
+def build_player(project: Path | None = None, unity: str | Path | None = None, timeout: float = 1800.0) -> Path:
+    """
+    Собирает RSMA-приложение сцены 1 (как build.sh / build.bat): Unity в batchmode без окна.
+    Проект при этом не должен быть открыт в редакторе.
+    """
+    project = Path(project) if project is not None else PROJECT_ROOT
+    if editor_is_open(project):
+        raise UnityLaunchError("Для сборки закройте проект в редакторе Unity и повторите")
+    editor = Path(unity) if unity else find_unity_editor(project=project)
+    if editor is None or not editor.exists():
+        raise UnityLaunchError(f"Для сборки нужен редактор Unity {project_unity_version(project)}: "
+                               f"установите его через Unity Hub или укажите путь --unity / RSMA_UNITY")
+    method = "SwarmDeliveryBuild.BuildWindows" if platform.system() == "Windows" else "SwarmDeliveryBuild.BuildLinux"
+    log_path = project / "Logs" / "build.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log.info("Собираю RSMA-приложение сцены 1 (Unity в фоне, несколько минут). Лог: %s", log_path)
+    result = subprocess.run([str(editor), "-batchmode", "-quit", "-projectPath", str(project),
+                             "-executeMethod", method, "-logFile", str(log_path)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+    player = find_built_player(project)
+    if result.returncode != 0 or player is None:
+        raise UnityLaunchError(f"Сборка не удалась (код {result.returncode}). Лог: {log_path}\n{_log_tail(log_path)}")
+    if platform.system() != "Windows":
+        player.chmod(player.stat().st_mode | 0o111)
+    log.info("Готово: %s", player)
+    return player
+
+
 def _log_tail(path: Path | None, lines: int = 15) -> str:
     if path is None or not path.exists():
         return ""
@@ -258,7 +294,7 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
                  unity: str | Path | None = None, player: str | Path | None = None,
                  project: Path | None = None, timeout: float = 900.0,
                  log_path: Path | None = None, python_control: bool = True,
-                 mission_config: dict | None = None) -> UnityInstance:
+                 mission_config: dict | None = None, prefer_player: bool = True) -> UnityInstance:
     """
     Приводит Unity к нужному состоянию: открыта сцена scene, нажат Play, сервер RSMA отвечает.
 
@@ -266,10 +302,12 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
     python_control=False — сцена 1 выполняет встроенную миссию.
     mission_config — параметры миссии ({"delivery": {...}, "environment": {...}}, см. MissionConfig.cs).
 
-    Работает в любом состоянии Unity:
-    * Unity в Play (любая сцена) — параметры и сцена меняются командами NetMQ;
-    * Unity открыта, но не в Play — запрос редактору через Temp/rsma_play_request.json;
-    * Unity закрыта — запускается редактор (или собранная игра) со сценой.
+    Порядок:
+    * RSMA уже работает (сборка или редактор в Play, любая сцена) — параметры и сцена меняются командами NetMQ;
+    * есть собранное RSMA-приложение (Builds/SwarmDelivery, python run.py --build) и prefer_player —
+      запускается оно: только сцена 1, старт за секунды, редактор не нужен;
+    * редактор открыт, но не в Play — запрос редактору через Temp/rsma_play_request.json;
+    * иначе запускается редактор Unity со сценой.
 
     Возвращает UnityInstance (process=None, если Unity уже работала).
     Бросает UnityLaunchError с подсказкой, что делать.
@@ -296,7 +334,13 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
         raise UnityLaunchError(f"RSMA на {host}:{port} не отвечает. Запустить Unity на другой машине "
                                "из скрипта нельзя: откройте сцену там и нажмите Play")
 
-    # 2. Редактор открыт, но не в Play: просим его открыть сцену и нажать Play
+    # 2. Собранное RSMA-приложение сцены 1
+    if player is None and unity is None and prefer_player and scene == DEFAULT_SCENE:
+        player = find_built_player(project)
+        if player is not None and build_is_stale(player, project):
+            log.warning("Сборка %s старше скриптов проекта — пересоберите: python run.py --build", player)
+
+    # 3. Редактор открыт, но не в Play: просим его открыть сцену и нажать Play
     if player is None and unity is None and editor_is_open(project):
         request = project / "Temp" / "rsma_play_request.json"
         request.write_text(json.dumps({"scene": scene, "config": config_json}, ensure_ascii=False), encoding="utf-8")
@@ -311,14 +355,15 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
         ensure_scene_loaded(scene, host, port, python_control=python_control if scene == DEFAULT_SCENE else None)
         return UnityInstance()
 
-    # 3. Unity закрыта: запускаем
+    # 4. Запуск сборки или редактора
     log_path = Path(log_path) if log_path else project / "Logs" / "rsma_python_launch.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     extra_args = [PYTHON_CONTROL_ARG] if python_control else []
 
     if player is not None:
-        cmd = [str(player), *extra_args, "-logFile", str(log_path)]
-        what = f"собранную сцену {player}"
+        cmd = [str(player), *extra_args, "-screen-fullscreen", "0", "-screen-width", "1600",
+               "-screen-height", "900", "-logFile", str(log_path)]
+        what = f"RSMA {player}"
     else:
         editor = Path(unity) if unity else find_unity_editor(project=project)
         if (editor is None or not editor.exists()) and unity is None and find_built_player(project) is not None:

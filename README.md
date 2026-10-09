@@ -21,14 +21,18 @@ cd Python
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-python run.py                          # запустить миссию доставки в RSMA (сцена 1)
+python run.py --build                  # один раз: собрать RSMA-приложение сцены 1 (Unity в фоне, без окна)
+python run.py                          # запустить миссию доставки в RSMA
 python run.py --speed 6 --height 15    # с параметрами
 python run.py --help                   # все параметры
 ```
 
-`run.py` сам приводит Unity к сцене 1 (`Assets/1.unity`) и нажимает Play — Unity может быть
-закрыта, открыта или уже играть другую сцену. Полет выполняет сама RSMA (встроенная миссия
+`run.py` запускает собранное RSMA-приложение (`Builds/SwarmDelivery`) напрямую: в нем только
+сцена 1, старт за секунды, редактор Unity не нужен. Полет выполняет сама RSMA (встроенная миссия
 `SwarmScriptedFlight`), Python только передает параметры и показывает ход полета в терминале.
+Пересобирать (`--build`) нужно после изменений в Unity-скриптах — `run.py` предупредит.
+Без сборки (или с `--editor`) сцена запускается в редакторе Unity; если RSMA уже работает —
+сцена 1 перезапускается с новыми параметрами.
 
 | Флаг | Что задает | По умолчанию |
 |---|---|---|

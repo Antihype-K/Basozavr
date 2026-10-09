@@ -12,8 +12,10 @@
     python run.py --config my_mission.json --speed 5
     python run.py --python-control                  # полетом управляет Python (Source/main.py)
 
-Работает в любом состоянии Unity: закрыта — запустит; открыта — откроет сцену 1 и нажмет Play;
-уже в Play — перезапустит сцену 1 с новыми параметрами. Все флаги: python run.py --help
+Запускается собранное RSMA-приложение сцены 1 (Builds/SwarmDelivery) — редактор Unity не нужен.
+Собрать его один раз (и после изменений в Unity-скриптах): python run.py --build
+Если сборки нет — сцена запускается в редакторе Unity (или --editor). Если RSMA уже работает —
+сцена 1 перезапускается с новыми параметрами. Все флаги: python run.py --help
 """
 
 import argparse
@@ -28,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "Source"))
 from RSMA.Client import RSMAClient  # noqa: E402
 from RSMA.uDTP import is_published  # noqa: E402
 from RSMA.uDTP.Topics import Float32, MissionStatus, Pose  # noqa: E402
-from scene.launcher import DEFAULT_SCENE, UnityLaunchError, launch_unity  # noqa: E402
+from scene.launcher import DEFAULT_SCENE, UnityLaunchError, build_player, launch_unity  # noqa: E402
 
 log = logging.getLogger("run")
 
@@ -103,8 +105,11 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="полетом управляет Python-контроллер (Source/main.py), а не встроенная миссия")
     g.add_argument("--duration", type=float, default=None, help="сколько секунд показывать ход полета")
     g.add_argument("--no-monitor", action="store_true", help="запустить и сразу выйти")
+    g.add_argument("--build", action="store_true",
+                   help="собрать RSMA-приложение сцены 1 (один раз и после изменений в Unity), затем запустить")
+    g.add_argument("--editor", action="store_true", help="запускать в редакторе Unity, а не собранное приложение")
     g.add_argument("--unity", help="путь к редактору Unity (иначе RSMA_UNITY или Unity Hub)")
-    g.add_argument("--player", help="запустить собранную игру вместо редактора")
+    g.add_argument("--player", help="путь к собранному RSMA-приложению (по умолчанию Builds/SwarmDelivery)")
     g.add_argument("--host", default="localhost")
     g.add_argument("--port", type=int, default=5555)
     g.add_argument("-v", "--verbose", action="store_true")
@@ -169,8 +174,11 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        launch_unity(scene=DEFAULT_SCENE, host=args.host, port=args.port, unity=args.unity, player=args.player,
-                     python_control=args.python_control, mission_config=config)
+        if args.build:
+            build_player(unity=args.unity)
+        launch_unity(scene=DEFAULT_SCENE, host=args.host, port=args.port,
+                     unity=args.unity if args.editor else None, player=args.player,
+                     python_control=args.python_control, mission_config=config, prefer_player=not args.editor)
     except UnityLaunchError as e:
         print(f"Не удалось запустить сцену: {e}", file=sys.stderr)
         return 1

@@ -110,3 +110,74 @@ def test_launch_passes_config_and_mode(tmp_path, monkeypatch, python_control):
         assert config == {"delivery": {"cruiseSpeed": 5, "externalControl": python_control}}
     finally:
         unity.stop()
+
+
+def _fake_exe(path: Path, args_file: Path) -> Path:
+    from test_launcher import FAKE
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
+    path.chmod(0o755)
+    return path
+
+
+def test_built_rsma_is_preferred_over_editor(tmp_path, monkeypatch):
+    """With a build present the editor is not started: only scene 1 exists in it."""
+    from test_launcher import free_port
+
+    args_file = tmp_path / "args.txt"
+    monkeypatch.setenv("FAKE_UNITY_ARGS", str(args_file))
+    editor = _fake_exe(tmp_path / "editor" / "Unity", tmp_path / "unused")
+    monkeypatch.setenv("RSMA_UNITY", str(editor))
+    project = tmp_path / "project"
+    _fake_exe(project / "Builds" / "SwarmDelivery" / "SwarmDelivery.x86_64", args_file)
+    port = free_port()
+    unity = launch_unity(host="127.0.0.1", port=port, project=project, timeout=30, python_control=False,
+                         mission_config={"delivery": {"cruiseSpeed": 7}})
+    try:
+        args = args_file.read_text().splitlines()
+        assert "-executeMethod" not in args and "-screen-fullscreen" in args
+        assert json.loads(Path(str(args_file) + ".config").read_text())["delivery"]["cruiseSpeed"] == 7
+    finally:
+        unity.stop()
+
+
+def test_build_player_runs_unity_batchmode(tmp_path, monkeypatch):
+    from scene.launcher import build_player
+
+    editor = tmp_path / "Unity"
+    editor.write_text('#!/bin/sh\n'
+                      'while [ $# -gt 0 ]; do [ "$1" = "-projectPath" ] && P="$2"; shift; done\n'
+                      'mkdir -p "$P/Builds/SwarmDelivery" && echo built > "$P/Builds/SwarmDelivery/SwarmDelivery.x86_64"\n')
+    editor.chmod(0o755)
+    project = tmp_path / "project"
+    project.mkdir()
+    player = build_player(project=project, unity=editor)
+    assert player == project / "Builds" / "SwarmDelivery" / "SwarmDelivery.x86_64"
+    assert player.stat().st_mode & 0o111
+
+
+def test_build_refuses_while_editor_is_open(tmp_path):
+    from scene.launcher import UnityLaunchError, build_player
+
+    (tmp_path / "Temp").mkdir()
+    (tmp_path / "Temp" / "UnityLockfile").write_text("")
+    with pytest.raises(UnityLaunchError, match="закройте проект"):
+        build_player(project=tmp_path, unity="/bin/true")
+
+
+def test_stale_build_is_detected(tmp_path):
+    import os
+
+    from scene.launcher import build_is_stale
+
+    player = tmp_path / "Builds" / "SwarmDelivery" / "SwarmDelivery.x86_64"
+    player.parent.mkdir(parents=True)
+    player.write_text("")
+    script = tmp_path / "Assets" / "Scripts" / "X.cs"
+    script.parent.mkdir(parents=True)
+    script.write_text("")
+    os.utime(player, (1000, 1000))
+    assert build_is_stale(player, tmp_path)
+    os.utime(player, (time.time() + 10, time.time() + 10))
+    assert not build_is_stale(player, tmp_path)

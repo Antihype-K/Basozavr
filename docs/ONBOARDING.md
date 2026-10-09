@@ -69,7 +69,8 @@ Builds\SwarmDeliveryWin\SwarmDelivery.exe
    Python запускает сцену и передает параметры флагами — Unity при этом может быть закрыта, открыта или в Play:
    ```bash
    cd Python && source .venv/bin/activate
-   python run.py --speed 6 --height 15 --payload-mass 15     # все флаги: python run.py --help
+   python run.py --build                                      # один раз: собрать приложение сцены 1 (проект в редакторе закрыть)
+   python run.py --speed 6 --height 15 --payload-mass 15     # запуск RSMA напрямую; все флаги: python run.py --help
    ```
 5. **Управление из Python** (папка `Python/`, подробно — `Python/README.md`). Сцену вручную запускать не нужно:
    скрипт сам запускает Unity, открывает `Assets/1.unity` с ключом `-python` (внешнее управление у `SwarmDeliveryScene`)
