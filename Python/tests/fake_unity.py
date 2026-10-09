@@ -26,6 +26,10 @@ if os.environ.get("FAKE_UNITY_MODE") == "fail":
 
 time.sleep(1.0)  # "loading the editor"
 server = MockServer(port=int(os.environ["RSMA_PORT"]), host="127.0.0.1")
+# Which scene the "editor" ended up in: what was asked, or FAKE_UNITY_SCENE (e.g. the last opened one)
+server.active_scene = os.environ.get("FAKE_UNITY_SCENE") or (
+    args[args.index("-rsmaScene") + 1] if "-rsmaScene" in args else "Assets/1.unity")
+server.external_control = "-python" in args and "FAKE_UNITY_SCENE" not in os.environ
 scene = OfflineScene(server.broker)
 server.start()
 

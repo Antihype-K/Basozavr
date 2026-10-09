@@ -66,8 +66,15 @@ public class SwarmDeliveryScene : MonoBehaviour
     {
         environment = GetComponent<RSMASwarmEnvironment>();
         if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-python") >= 0) externalControl = true;
+        // Сцену загрузил Python командой LoadScene:...|python
+        if (RSMA.NetMQ.NetMQServer.ExternalControlRequested) externalControl = true;
         // Рой собираем сами — после того, как точки привязаны к рельефу
         environment.buildOnStart = false;
+    }
+
+    void OnDestroy()
+    {
+        RSMA.NetMQ.NetMQServer.ExternalControlActive = false;
     }
 
     void Start()
@@ -89,6 +96,8 @@ public class SwarmDeliveryScene : MonoBehaviour
         environment.BuildSwarmScene();
 
         TuneDrones();
+        // Python узнает режим сцены через GetSceneInfo
+        RSMA.NetMQ.NetMQServer.ExternalControlActive = externalControl;
         if (externalControl)
         {
             Debug.Log("[SwarmDelivery] Внешнее управление: встроенная миссия отключена, ждём Python-контроллер (порт 5555).");

@@ -10,6 +10,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -129,3 +130,17 @@ def test_batch(client):
     assert [s.value for s in states[:6]] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     assert not is_published(states[6])
 
+
+
+def test_scene_info_and_load_scene(client):
+    """GetSceneInfo / LoadScene of the real C# server (Unity scene manager is stubbed in NetMQHost)."""
+    import json
+
+    client.send_command("LoadScene:Assets/1.unity|python")
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        info = json.loads(client.send_command("GetSceneInfo"))
+        if info["scene"] == "Assets/1.unity":
+            break
+        time.sleep(0.05)
+    assert info["status"] == "ok" and info["scene"] == "Assets/1.unity"

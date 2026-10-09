@@ -20,22 +20,36 @@ public static class RSMALauncher
     {
         string scene = GetArgument("-rsmaScene") ?? DefaultScene;
 
+        var sceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(scene);
+        if (sceneAsset == null)
+        {
+            Debug.LogError($"[RSMALauncher] Scene not found: {scene}");
+            return;
+        }
+
+        // Play всегда стартует с нужной сцены, даже если редактор при запуске
+        // восстановил другую (последнюю открытую). После выхода из Play настройка снимается.
+        EditorSceneManager.playModeStartScene = sceneAsset;
+        EditorApplication.playModeStateChanged += ResetStartSceneOnExit;
+
         // -executeMethod выполняется во время загрузки редактора: ждем, пока он будет готов
         EditorApplication.delayCall += () =>
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
 
-            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(scene) == null)
-            {
-                Debug.LogError($"[RSMALauncher] Scene not found: {scene}");
-                return;
-            }
-
             Debug.Log($"[RSMALauncher] Opening {scene} and entering Play mode");
             EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
             EditorApplication.EnterPlaymode();
         };
+    }
+
+    private static void ResetStartSceneOnExit(PlayModeStateChange state)
+    {
+        if (state != PlayModeStateChange.EnteredEditMode)
+            return;
+        EditorSceneManager.playModeStartScene = null;
+        EditorApplication.playModeStateChanged -= ResetStartSceneOnExit;
     }
 
     private static string GetArgument(string name)

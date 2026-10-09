@@ -68,6 +68,59 @@ def server_alive(host: str = "localhost", port: int = 5555, timeout_ms: int = 30
         return client.ping()
 
 
+def scene_info(host: str = "localhost", port: int = 5555, timeout_ms: int = 1000) -> dict | None:
+    """
+    Какая сцена открыта в Unity и включено ли управление из Python:
+    {"scene": "Assets/1.unity", "externalControl": True}. None — сервер старый и команду не знает.
+    """
+    with RSMAClient(host=host, port=port, timeout=timeout_ms, retries=0) as client:
+        reply = client.send_command("GetSceneInfo")
+    try:
+        info = json.loads(reply)
+    except ValueError:
+        return None
+    return info if isinstance(info, dict) and info.get("status") == "ok" else None
+
+
+def ensure_scene_loaded(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int = 5555,
+                        python_control: bool | None = None, timeout: float = 120.0) -> None:
+    """
+    Проверяет, что в Unity открыта нужная сцена в режиме управления из Python; если нет —
+    переключает ее (команда LoadScene) и ждет загрузки. Бросает UnityLaunchError по таймауту.
+    """
+    if python_control is None:
+        python_control = scene == DEFAULT_SCENE  # режим -python есть у SwarmDeliveryScene сцены 1
+
+    def ready(info: dict) -> bool:
+        return info.get("scene") == scene and (bool(info.get("externalControl")) or not python_control)
+
+    info = scene_info(host, port)
+    if info is None:
+        log.warning("Unity не сообщает открытую сцену (старая версия скриптов). Проверьте сами, что открыта %s"
+                    "%s", scene, " с включенным externalControl у SwarmDeliveryScene" if python_control else "")
+        return
+    if ready(info):
+        log.info("В Unity открыта %s%s", scene, ", управление из Python включено" if python_control else "")
+        return
+
+    log.warning("В Unity открыта %s (управление из Python: %s) — переключаю на %s",
+                info.get("scene") or "?", "да" if info.get("externalControl") else "нет", scene)
+    with RSMAClient(host=host, port=port, timeout=2000, retries=0) as client:
+        reply = client.send_command(f"LoadScene:{scene}" + ("|python" if python_control else ""))
+    if not reply.startswith("OK"):
+        raise UnityLaunchError(f"Не удалось переключить сцену: {reply}")
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        info = scene_info(host, port, timeout_ms=500)
+        if info is not None and ready(info):
+            log.info("Сцена %s загружена", scene)
+            return
+    raise UnityLaunchError(f"Сцена {scene} не загрузилась за {timeout:.0f} с (сейчас: {info}). "
+                           f"Она должна быть в File → Build Settings")
+
+
 def project_unity_version(project: Path | None = None) -> str | None:
     project = project if project is not None else PROJECT_ROOT
     version_file = Path(project) / "ProjectSettings" / "ProjectVersion.txt"
@@ -160,7 +213,8 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
     (process=None, если сцена уже работала). Бросает UnityLaunchError с подсказкой, что делать.
     """
     if server_alive(host, port):
-        log.info("Сцена RSMA уже запущена (%s:%d)", host, port)
+        log.info("Unity уже запущена (%s:%d)", host, port)
+        ensure_scene_loaded(scene, host, port)
         return UnityInstance()
 
     if host not in LOCAL_HOSTS:
@@ -222,5 +276,6 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
             last_report = now
         time.sleep(1.0)
 
-    log.info("Сцена запущена за %.0f с, сервер RSMA отвечает на %s:%d", time.monotonic() - start, host, port)
+    log.info("Unity запущена за %.0f с, сервер RSMA отвечает на %s:%d", time.monotonic() - start, host, port)
+    ensure_scene_loaded(scene, host, port)
     return UnityInstance(process=process, log_path=log_path)

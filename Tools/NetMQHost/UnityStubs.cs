@@ -34,12 +34,17 @@ namespace UnityEngine
 
     namespace SceneManagement
     {
-        public struct Scene { public string name; }
+        public struct Scene { public string name; public string path; }
 
         public static class SceneManager
         {
-            public static Scene GetActiveScene() => default;
-            public static void LoadScene(string name) => Console.Error.WriteLine($"LoadScene {name}");
+            private static string _active = "Assets/Scenes/Untitled.unity";
+            public static Scene GetActiveScene() => new Scene { name = System.IO.Path.GetFileNameWithoutExtension(_active), path = _active };
+            public static void LoadScene(string name)
+            {
+                Console.Error.WriteLine($"LoadScene {name}");
+                _active = name;
+            }
         }
     }
 }

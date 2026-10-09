@@ -32,6 +32,15 @@ namespace RSMA.NetMQ
         };
         public static bool IsRunning => _isRunning;
 
+        // Сцена, открытая сейчас (обновляется в Update из главного потока Unity), — для GetSceneInfo
+        private static volatile string _activeScene = "";
+
+        /// <summary>Python попросил загрузить сцену в режиме внешнего управления (LoadScene:...|python).</summary>
+        public static volatile bool ExternalControlRequested;
+
+        /// <summary>Сцена работает в режиме внешнего управления (выставляет SwarmDeliveryScene).</summary>
+        public static volatile bool ExternalControlActive;
+
         static NetMQServer()
         {
         #if UNITY_EDITOR
@@ -174,6 +183,31 @@ namespace RSMA.NetMQ
             {
                 return "OK: Server is running";
             }
+            else if (command.StartsWith("GetSceneInfo"))
+            {
+                // Какая сцена открыта и управляется ли она из Python
+                return JsonConvert.SerializeObject(new
+                {
+                    status = "ok",
+                    scene = _activeScene,
+                    externalControl = ExternalControlActive
+                });
+            }
+            else if (command.StartsWith("LoadScene:"))
+            {
+                // LoadScene:Assets/1.unity|python — загрузить сцену (из Build Settings),
+                // |python включает внешнее управление (как ключ -python)
+                string[] parts = command.Substring("LoadScene:".Length).Split('|');
+                string scene = parts[0].Trim();
+                bool python = parts.Length > 1 && parts[1].Trim() == "python";
+                EnqueueAction(() =>
+                {
+                    ExternalControlRequested = python;
+                    ExternalControlActive = false;
+                    UnityEngine.SceneManagement.SceneManager.LoadScene(scene);
+                });
+                return $"OK: Loading {scene}";
+            }
             else 
             {
                 return $"Error: Unknown command '{command}'";
@@ -191,6 +225,8 @@ namespace RSMA.NetMQ
         // Метод, который нужно вызывать в Update любого MonoBehaviour
         public static void Update()
         {
+            _activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path;
+
             // Забираем действия под замком, а выполняем без него: действие может само вызвать
             // EnqueueAction, а исключение в одном действии не должно терять остальные
             Action[] actions;

@@ -7,7 +7,7 @@ import pytest
 
 from RSMA.MockServer import MockServer
 from scene import Simulation, UnityLaunchError, launch_unity
-from scene.launcher import find_unity_editor, server_alive
+from scene.launcher import ensure_scene_loaded, find_unity_editor, scene_info, server_alive
 
 pytestmark = pytest.mark.skipif(platform.system() == "Windows", reason="fake editor is a shell script")
 
@@ -129,3 +129,36 @@ def test_built_player_is_used_when_no_editor(fake_unity, tmp_path, monkeypatch):
         assert server_alive("127.0.0.1", port)
     finally:
         unity.stop()
+
+
+def test_wrong_scene_after_start_is_switched(fake_unity, tmp_path, monkeypatch):
+    """The editor restored another scene: Python switches it to scene 1 with Python control."""
+    exe, _ = fake_unity
+    monkeypatch.setenv("FAKE_UNITY_SCENE", "Assets/Scenes/SupremeFlat.unity")
+    port = free_port()
+    unity = launch_unity(port=port, host="127.0.0.1", unity=exe, project=tmp_path, timeout=30)
+    try:
+        assert scene_info("127.0.0.1", port) == {"status": "ok", "scene": "Assets/1.unity", "externalControl": True}
+    finally:
+        unity.stop()
+
+
+def test_running_unity_with_other_scene_is_switched():
+    with MockServer(port=0, host="127.0.0.1") as server:
+        server.active_scene, server.external_control = "Assets/Scenes/SupremeFlat.unity", False
+        launch_unity(port=server.port, host="127.0.0.1", unity="/no/such/unity")
+        assert server.active_scene == "Assets/1.unity" and server.external_control
+
+
+def test_scene_1_without_python_control_is_reloaded():
+    with MockServer(port=0, host="127.0.0.1") as server:
+        server.external_control = False  # scene 1 running its built-in mission
+        ensure_scene_loaded(host="127.0.0.1", port=server.port)
+        assert server.external_control
+
+
+def test_old_unity_without_scene_commands_only_warns(caplog):
+    with MockServer(port=0, host="127.0.0.1") as server:
+        server.supports_scene_commands = False
+        ensure_scene_loaded(host="127.0.0.1", port=server.port)
+        assert "не сообщает открытую сцену" in caplog.text

@@ -26,6 +26,10 @@ class MockServer:
         self.endpoint = f"tcp://{host}:{port}"
         self.broker = broker or InMemoryBroker()
         self.supports_batch = supports_batch
+        # Состояние "сцены" для GetSceneInfo / LoadScene (как NetMQServer в Unity)
+        self.active_scene = "Assets/1.unity"
+        self.external_control = True
+        self.supports_scene_commands = True
         self.messages: list[str] = []  # PrintMessage log
         self.restart_count = 0
 
@@ -71,6 +75,12 @@ class MockServer:
             return "OK: Level restarting"
         if command.startswith("GetServerStatus"):
             return "OK: Server is running"
+        if self.supports_scene_commands and command.startswith("GetSceneInfo"):
+            return json.dumps({"status": "ok", "scene": self.active_scene, "externalControl": self.external_control})
+        if self.supports_scene_commands and command.startswith("LoadScene:"):
+            scene, _, flag = command[len("LoadScene:"):].partition("|")
+            self.active_scene, self.external_control = scene.strip(), flag.strip() == "python"
+            return f"OK: Loading {self.active_scene}"
         return f"Error: Unknown command '{command}'"
 
     def _process_batch(self, data: str | None) -> str:
