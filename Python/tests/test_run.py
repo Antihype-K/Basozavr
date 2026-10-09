@@ -181,3 +181,62 @@ def test_stale_build_is_detected(tmp_path):
     assert build_is_stale(player, tmp_path)
     os.utime(player, (time.time() + 10, time.time() + 10))
     assert not build_is_stale(player, tmp_path)
+
+
+def test_build_windows_and_package(tmp_path):
+    """--build windows: Unity batchmode with BuildWindows, then a zip that runs on a PC without Unity."""
+    import zipfile
+
+    from scene.launcher import build_player, package_windows
+
+    repo = Path(__file__).resolve().parents[2]
+    project = tmp_path / "project"
+    (project / "Python").mkdir(parents=True)
+    import shutil
+
+    shutil.copytree(repo / "Python" / "Source", project / "Python" / "Source",
+                    ignore=shutil.ignore_patterns("__pycache__", "logs"))
+    for rel in ("Python/run.py", "Python/requirements.txt", "rsma.bat", "ЗАПУСК.txt"):
+        shutil.copy(repo / rel, project / rel)
+    editor = tmp_path / "Unity"
+    editor.write_text('#!/bin/sh\n'
+                      'while [ $# -gt 0 ]; do [ "$1" = "-projectPath" ] && P="$2"; '
+                      '[ "$1" = "-executeMethod" ] && M="$2"; shift; done\n'
+                      '[ "$M" = "SwarmDeliveryBuild.BuildWindows" ] || exit 3\n'
+                      'mkdir -p "$P/Builds/SwarmDeliveryWin/SwarmDelivery_Data" && echo exe > "$P/Builds/SwarmDeliveryWin/SwarmDelivery.exe"\n'
+                      'echo data > "$P/Builds/SwarmDeliveryWin/SwarmDelivery_Data/level0"\n')
+    editor.chmod(0o755)
+
+    exe = build_player(project=project, unity=editor, target="windows")
+    assert exe == project / "Builds" / "SwarmDeliveryWin" / "SwarmDelivery.exe"
+
+    archive = package_windows(project)
+    with zipfile.ZipFile(archive) as zf:
+        names = set(zf.namelist())
+        assert "SwarmDelivery/Builds/SwarmDeliveryWin/SwarmDelivery.exe" in names
+        assert "SwarmDelivery/Builds/SwarmDeliveryWin/SwarmDelivery_Data/level0" in names
+        assert "SwarmDelivery/Python/run.py" in names and "SwarmDelivery/Python/Source/scene/launcher.py" in names
+        assert not any("__pycache__" in n for n in names)
+        bat = zf.read("SwarmDelivery/rsma.bat")
+        assert b"\r\n" in bat and b"\n" not in bat.replace(b"\r\n", b"")  # CRLF only
+        assert "SwarmDelivery/ЗАПУСК.txt" in names
+
+    # Unpacked on "Windows": run.py finds the build next to it (PROJECT_ROOT is the archive root)
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(tmp_path / "unpacked")
+    from scene.launcher import BUILD_TARGETS
+
+    root = tmp_path / "unpacked" / "SwarmDelivery"
+    assert (root / BUILD_TARGETS["windows"][1]).exists()
+    assert (root / "Python" / "Source" / "scene" / "launcher.py").resolve().parents[3] == root.resolve()
+
+
+def test_cross_build_hint_when_module_missing(tmp_path):
+    from scene.launcher import UnityLaunchError, build_player
+
+    editor = tmp_path / "Unity"
+    editor.write_text('#!/bin/sh\nexit 1\n')
+    editor.chmod(0o755)
+    (tmp_path / "p").mkdir()
+    with pytest.raises(UnityLaunchError, match="Windows Build Support"):
+        build_player(project=tmp_path / "p", unity=editor, target="windows")

@@ -14,24 +14,31 @@
 
 ## Быстрый старт
 
-Нужны **Unity 6000.3.16f1** (через Unity Hub) и **Python 3.10+**.
+Полный гайд — [`ЗАПУСК.txt`](ЗАПУСК.txt). Все команды — с полным путем к `rsma.bat` / `rsma.sh`,
+переходить в папку проекта не нужно; при первом запуске окружение Python создается само.
 
-```bash
-cd Python
-python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-python run.py --build                  # один раз: собрать RSMA-приложение сцены 1 (Unity в фоне, без окна)
-python run.py                          # запустить миссию доставки в RSMA
-python run.py --speed 6 --height 15    # с параметрами
-python run.py --help                   # все параметры
+```bat
+:: Windows — двойной щелчок по rsma.bat или из любой консоли
+"C:\путь\к\BAS_RSMA\rsma.bat" --build              :: один раз: собрать RSMA (нужна Unity 6000.3.16f1)
+"C:\путь\к\BAS_RSMA\rsma.bat"                      :: миссия доставки в RSMA
+"C:\путь\к\BAS_RSMA\rsma.bat" --speed 6 --height 15
 ```
 
-После успешной доставки (закончилась выгрузка груза) `run.py` сохраняет отчет в `Python/logs/`
-(`delivery_*.png` — путь груза сверху, высота, скорость, натяжение тросов; `delivery_*.csv` — данные)
-и открывает график. `--no-plot` — без графика, ход полета просто печатается в терминале.
+```bash
+# Linux
+~/путь/к/BAS_RSMA/rsma.sh --build                  # один раз: собрать RSMA
+~/путь/к/BAS_RSMA/rsma.sh --build windows          # собрать под Windows + архив Builds/SwarmDelivery-Windows.zip
+~/путь/к/BAS_RSMA/rsma.sh --speed 6 --height 15
+```
 
-`run.py` запускает собранное RSMA-приложение (`Builds/SwarmDelivery`) напрямую: в нем только
+Архив `SwarmDelivery-Windows.zip` (RSMA + Python-часть + `rsma.bat` + гайд) запускается на любом
+компьютере с Windows и Python, Unity там не нужна: распаковать и запустить `rsma.bat`.
+
+После успешной доставки (закончилась выгрузка груза) сохраняется отчет в `Python/logs/`
+(`delivery_*.png` — путь груза сверху, высота, скорость, раскачка груза, натяжение тросов, итоги;
+`delivery_*.csv` — данные) и открывается график. `--no-plot` — без графика, ход полета просто печатается в терминале.
+
+`rsma` (это `Python/run.py`) запускает собранное RSMA-приложение (`Builds/SwarmDelivery`) напрямую: в нем только
 сцена 1, старт за секунды, редактор Unity не нужен. Полет выполняет сама RSMA (встроенная миссия
 `SwarmScriptedFlight`), Python только передает параметры и показывает ход полета в терминале.
 Пересобирать (`--build`) нужно после изменений в Unity-скриптах — `run.py` предупредит.

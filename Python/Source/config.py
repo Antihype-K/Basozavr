@@ -1,3 +1,5 @@
+from pathlib import Path
+
 # config.py — параметры миссии роя. Все расстояния в метрах, время в секундах,
 # координаты в правой системе Python (Z — вверх), см. utils/rsma_helpers.py.
 # Высоты задаются ОТНОСИТЕЛЬНО стартовой высоты груза (в сцене 1 база стоит на рельефе).
@@ -59,5 +61,5 @@ MAX_SWAY_CORRECTION = 0.5  # Ограничение коррекции пози�
 # ==========================================
 TELEMETRY_TIMEOUT = 1.0     # Нет обновлений телеметрии груза дольше N с — миссия на паузе
 STATUS_EVERY_STEPS = 5     # Публиковать MissionStatus для HUD в RSMA каждые N шагов
-LOG_DIR = "logs"
+LOG_DIR = str(Path(__file__).resolve().parent.parent / "logs")  # Python/logs, из какой папки ни запускай
 CONSOLE_LOG_EVERY = 20    # Вывод телеметрии в консоль каждые N шагов

@@ -9,6 +9,7 @@
 import argparse
 import glob
 import os
+from pathlib import Path
 
 import matplotlib
 import numpy as np
@@ -136,7 +137,8 @@ def plot_flight(df: pd.DataFrame, title: str):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Дашборд телеметрии полета роя")
     parser.add_argument("log", nargs="?", help="CSV-лог (по умолчанию — самый свежий в --log-dir)")
-    parser.add_argument("--log-dir", default="logs")
+    parser.add_argument("--log-dir", default=str(Path(__file__).resolve().parent.parent / "logs"),
+                        help="папка с логами (по умолчанию Python/logs)")
     parser.add_argument("--save", metavar="FILE", help="сохранить дашборд в файл (png/pdf/svg) вместо показа окна")
     args = parser.parse_args(argv)
 

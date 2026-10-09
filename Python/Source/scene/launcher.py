@@ -199,15 +199,23 @@ def find_unity_editor(version: str | None = None, project: Path | None = None) -
     return installed_editors().get(version) if version else None
 
 
-def find_built_player(project: Path | None = None) -> Path | None:
-    """Собранная игра сцены 1 (build.sh / build.bat / меню RSMA → Build SwarmDelivery)."""
-    project = project if project is not None else PROJECT_ROOT
-    for rel in ("Builds/SwarmDelivery/SwarmDelivery.x86_64", "Builds/SwarmDeliveryWin/SwarmDelivery.exe",
-                "Builds/SwarmDelivery/SwarmDelivery.app/Contents/MacOS/SwarmDelivery"):
-        path = Path(project) / rel
-        if path.exists():
-            return path
-    return None
+# Сборки сцены 1 (Assets/Editor/SwarmDeliveryBuild.cs): метод Unity и путь к приложению
+BUILD_TARGETS = {
+    "linux": ("SwarmDeliveryBuild.BuildLinux", "Builds/SwarmDelivery/SwarmDelivery.x86_64"),
+    "windows": ("SwarmDeliveryBuild.BuildWindows", "Builds/SwarmDeliveryWin/SwarmDelivery.exe"),
+}
+WINDOWS_PACKAGE = "Builds/SwarmDelivery-Windows.zip"
+
+
+def host_target() -> str:
+    return "windows" if platform.system() == "Windows" else "linux"
+
+
+def find_built_player(project: Path | None = None, target: str | None = None) -> Path | None:
+    """Собранное RSMA-приложение сцены 1 для этой системы (или для target)."""
+    project = Path(project) if project is not None else PROJECT_ROOT
+    path = project / BUILD_TARGETS[target or host_target()][1]
+    return path if path.exists() else None
 
 
 def build_is_stale(player: Path, project: Path | None = None) -> bool:
@@ -218,11 +226,14 @@ def build_is_stale(player: Path, project: Path | None = None) -> bool:
     return any(f.stat().st_mtime > built for f in scripts.rglob("*.cs")) if scripts.is_dir() else False
 
 
-def build_player(project: Path | None = None, unity: str | Path | None = None, timeout: float = 1800.0) -> Path:
+def build_player(project: Path | None = None, unity: str | Path | None = None, timeout: float = 1800.0,
+                 target: str | None = None) -> Path:
     """
     Собирает RSMA-приложение сцены 1 (как build.sh / build.bat): Unity в batchmode без окна.
-    Проект при этом не должен быть открыт в редакторе.
+    target: "linux" или "windows" (по умолчанию — для этой системы); для сборки под другую систему
+    в Unity Hub нужен модуль "<система> Build Support". Проект не должен быть открыт в редакторе.
     """
+    target = target or host_target()
     project = Path(project) if project is not None else PROJECT_ROOT
     if editor_is_open(project):
         raise UnityLaunchError("Для сборки закройте проект в редакторе Unity и повторите")
@@ -230,20 +241,64 @@ def build_player(project: Path | None = None, unity: str | Path | None = None, t
     if editor is None or not editor.exists():
         raise UnityLaunchError(f"Для сборки нужен редактор Unity {project_unity_version(project)}: "
                                f"установите его через Unity Hub или укажите путь --unity / RSMA_UNITY")
-    method = "SwarmDeliveryBuild.BuildWindows" if platform.system() == "Windows" else "SwarmDeliveryBuild.BuildLinux"
+    method, output = BUILD_TARGETS[target]
     log_path = project / "Logs" / "build.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log.info("Собираю RSMA-приложение сцены 1 (Unity в фоне, несколько минут). Лог: %s", log_path)
+    log.info("Собираю RSMA-приложение сцены 1 под %s (Unity в фоне, несколько минут). Лог: %s",
+             "Windows" if target == "windows" else "Linux", log_path)
     result = subprocess.run([str(editor), "-batchmode", "-quit", "-projectPath", str(project),
                              "-executeMethod", method, "-logFile", str(log_path)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
-    player = find_built_player(project)
-    if result.returncode != 0 or player is None:
-        raise UnityLaunchError(f"Сборка не удалась (код {result.returncode}). Лог: {log_path}\n{_log_tail(log_path)}")
-    if platform.system() != "Windows":
+    player = project / output
+    if result.returncode != 0 or not player.exists():
+        tail = _log_tail(log_path, 25)
+        hint = ""
+        if target != host_target() or "not supported" in tail or "Build Support" in tail:
+            hint = (f"\nДля сборки под {'Windows' if target == 'windows' else 'Linux'} в Unity Hub нужен модуль: "
+                    f"Installs → ⚙ у {project_unity_version(project)} → Add modules → "
+                    f"{'Windows' if target == 'windows' else 'Linux'} Build Support (Mono).")
+        raise UnityLaunchError(f"Сборка не удалась (код {result.returncode}).{hint}\nЛог: {log_path}\n{tail}")
+    if target == "linux":
         player.chmod(player.stat().st_mode | 0o111)
     log.info("Готово: %s", player)
     return player
+
+
+def package_windows(project: Path | None = None) -> Path:
+    """
+    Архив для Windows-компьютера без Unity: собранная сцена (Builds/SwarmDeliveryWin), Python-часть
+    и rsma.bat. Распаковать в любую папку и запустить rsma.bat (нужен только Python 3.10+).
+    """
+    import zipfile
+
+    project = Path(project) if project is not None else PROJECT_ROOT
+    build_dir = project / "Builds" / "SwarmDeliveryWin"
+    if not (build_dir / "SwarmDelivery.exe").exists():
+        raise UnityLaunchError("Нет сборки под Windows: сначала соберите ее (rsma --build windows)")
+
+    def skip(path: Path) -> bool:
+        parts = set(path.parts)
+        return bool(parts & {"__pycache__", ".venv", "logs", ".pytest_cache", ".ruff_cache"}) or \
+            path.name.endswith("_BurstDebugInformation_DoNotShip") or "DoNotShip" in path.as_posix()
+
+    out = project / WINDOWS_PACKAGE
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in build_dir.rglob("*"):
+            if f.is_file() and not skip(f.relative_to(project)):
+                zf.write(f, f"SwarmDelivery/{f.relative_to(project).as_posix()}")
+        python = project / "Python"
+        for rel in ("run.py", "requirements.txt"):
+            zf.write(python / rel, f"SwarmDelivery/Python/{rel}")
+        for f in (python / "Source").rglob("*"):
+            if f.is_file() and not skip(f.relative_to(project)):
+                zf.write(f, f"SwarmDelivery/{f.relative_to(project).as_posix()}")
+        for rel in ("rsma.bat", "ЗАПУСК.txt"):
+            if (project / rel).exists():  # для Windows — с переводами строк CRLF
+                text = (project / rel).read_text(encoding="utf-8").replace("\r\n", "\n").replace("\n", "\r\n")
+                zf.writestr(f"SwarmDelivery/{rel}", text.encode("utf-8"))
+    log.info("Архив для Windows: %s (%.0f МБ)", out, out.stat().st_size / 1e6)
+    return out
 
 
 def _log_tail(path: Path | None, lines: int = 15) -> str:

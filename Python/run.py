@@ -30,9 +30,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "Source"))
 
 from RSMA.Client import RSMAClient  # noqa: E402
 from RSMA.uDTP import is_published  # noqa: E402
-from RSMA.uDTP.Topics import Float32, MissionStatus, Pose  # noqa: E402
+from RSMA.uDTP.Topics import Float32, MissionStatus, Pose, SwarmTelemetry  # noqa: E402
 from scene.flight_report import FlightRecorder, report_paths  # noqa: E402
-from scene.launcher import DEFAULT_SCENE, UnityLaunchError, build_player, launch_unity  # noqa: E402
+from scene.launcher import (  # noqa: E402
+    DEFAULT_SCENE,
+    UnityLaunchError,
+    build_player,
+    host_target,
+    launch_unity,
+    package_windows,
+)
 
 log = logging.getLogger("run")
 
@@ -111,8 +118,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="не строить график после доставки (по умолчанию: график и выход после первой доставки)")
     g.add_argument("--log-dir", type=Path, default=Path(__file__).resolve().parent / "logs",
                    help="куда сохранять CSV и PNG отчета (Python/logs)")
-    g.add_argument("--build", action="store_true",
-                   help="собрать RSMA-приложение сцены 1 (один раз и после изменений в Unity), затем запустить")
+    g.add_argument("--build", nargs="?", const="auto", choices=["auto", "linux", "windows"],
+                   help="собрать RSMA-приложение сцены 1 (один раз и после изменений в Unity) и запустить; "
+                        "--build windows — собрать под Windows и упаковать архив Builds/SwarmDelivery-Windows.zip")
     g.add_argument("--editor", action="store_true", help="запускать в редакторе Unity, а не собранное приложение")
     g.add_argument("--unity", help="путь к редактору Unity (иначе RSMA_UNITY или Unity Hub)")
     g.add_argument("--player", help="путь к собранному RSMA-приложению (по умолчанию Builds/SwarmDelivery)")
@@ -164,22 +172,24 @@ def show_figure(fig, png: Path) -> None:
 
 
 def monitor(host: str, port: int, duration: float | None, plot: bool = True,
-            log_dir: Path = Path("logs"), show: bool = True) -> FlightRecorder:
+            log_dir: Path = Path("logs"), show: bool = True, parameters: dict | None = None) -> FlightRecorder:
     """
     Печатает ход полета (этап, расстояние до площадки, груз, натяжение тросов) и записывает его.
     С plot=True после успешной доставки (завершилась «Выгрузка») сохраняет CSV и PNG-отчет,
     показывает график и возвращает запись.
     """
     recorder = FlightRecorder()
+    recorder.parameters = parameters or {}
     start = time.monotonic()
     last_print = -1.0
     last_phase = None
     with RSMAClient(host=host, port=port, timeout=1000) as client:
         while duration is None or time.monotonic() - start < duration:
             now = time.monotonic() - start
-            requests = [("MissionStatus", MissionStatus), ("PayloadPose", Pose)]
+            requests = [("MissionStatus", MissionStatus), ("PayloadPose", Pose), ("SwarmTelemetry", SwarmTelemetry)]
             requests += [(f"CableForce_{i}", Float32) for i in range(1, 17)]
-            status, payload, *forces = client.get_states(requests)
+            status, payload, telemetry, *forces = client.get_states(requests)
+            telemetry = telemetry if is_published(telemetry) else None
             if status is None and payload is None:
                 if now - last_print >= 1.0:
                     log.warning("Нет связи со сценой (%s)", client.last_error)
@@ -192,7 +202,7 @@ def monitor(host: str, port: int, duration: float | None, plot: bool = True,
             phase = status.phase if has_status else "—"
             if is_published(payload):
                 recorder.add(now, phase, payload.position, status.distanceToFinish if has_status else 0.0,
-                             tension, finish=status.finish if has_status else None)
+                             tension, finish=status.finish if has_status else None, telemetry=telemetry)
 
             if phase != last_phase:
                 log.info("Этап: %s", phase)
@@ -205,6 +215,8 @@ def monitor(host: str, port: int, duration: float | None, plot: bool = True,
                 if is_published(payload):
                     p = payload.position
                     line += f"груз ({p.x:6.1f}, {p.y:5.1f}, {p.z:6.1f})  "
+                if telemetry is not None:
+                    line += f"раскачка {telemetry.swingAngle:4.1f}°  "
                 print(line + f"Σ натяжение {tension:5.0f} Н", flush=True)
 
             if plot and recorder.delivered:
@@ -232,7 +244,14 @@ def main(argv=None) -> int:
 
     try:
         if args.build:
-            build_player(unity=args.unity)
+            target = None if args.build == "auto" else args.build
+            player = build_player(unity=args.unity, target=target)
+            if (target or host_target()) == "windows":
+                archive = package_windows()
+                print(f"Сборка под Windows: {player}\nАрхив для другого компьютера: {archive}")
+            if target is not None and target != host_target():
+                print("Эта сборка не для текущей системы — запускать ее на Windows: rsma.bat")
+                return 0
         launch_unity(scene=DEFAULT_SCENE, host=args.host, port=args.port,
                      unity=args.unity if args.editor else None, player=args.player,
                      python_control=args.python_control, mission_config=config, prefer_player=not args.editor)
@@ -247,7 +266,7 @@ def main(argv=None) -> int:
         if code == 0 and not args.no_plot:
             import visualize  # Python/Source/visualize.py: дашборд последнего CSV-лога контроллера
 
-            visualize.main(["--log-dir", "logs"])
+            visualize.main(["--log-dir", str(args.log_dir)])
         return code
 
     if args.no_monitor:
@@ -257,7 +276,7 @@ def main(argv=None) -> int:
           + ("После доставки груза откроется график. " if not args.no_plot else "")
           + "Ctrl+C — выйти (сцена продолжит работать).")
     try:
-        monitor(args.host, args.port, args.duration, plot=not args.no_plot, log_dir=args.log_dir)
+        monitor(args.host, args.port, args.duration, plot=not args.no_plot, log_dir=args.log_dir, parameters=config)
     except KeyboardInterrupt:
         pass
     return 0

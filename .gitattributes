@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Windows command files need CRLF
+*.bat text eol=crlf
+ЗАПУСК.txt text eol=crlf

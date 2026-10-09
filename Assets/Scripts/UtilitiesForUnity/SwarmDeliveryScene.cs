@@ -237,7 +237,7 @@ public class SwarmDeliveryScene : MonoBehaviour
     {
         statusTimer -= Time.deltaTime;
         if (statusTimer > 0.0f) return;
-        statusTimer = 0.2f;
+        statusTimer = 0.1f;
 
         Vector3 payload = flight.payload != null ? flight.payload.position : basePoint;
         Vector2 toDelivery = new Vector2(deliveryPoint.x - payload.x, deliveryPoint.z - payload.z);
@@ -250,6 +250,19 @@ public class SwarmDeliveryScene : MonoBehaviour
             distanceToFinish = toDelivery.magnitude,
             setpoint = payload,
             finish = deliveryPoint
+        });
+        RSMA.uDTP.DataBroker.Publish("SwarmTelemetry", new RSMA.uDTP.Topics.SwarmTelemetry
+        {
+            timestamp = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            missionTime = flight.MissionTime,
+            swingAngle = flight.SwingAngle,
+            totalTension = flight.TotalTension,
+            minTension = flight.MinTension,
+            maxTension = flight.MaxTension,
+            payloadSpeed = flight.PayloadSpeed,
+            traveledDistance = flight.TraveledDistance,
+            laps = flight.LapsDone,
+            payloadAttached = flight.PayloadAttached
         });
     }
 

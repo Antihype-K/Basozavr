@@ -16,6 +16,7 @@ from RSMA.uDTP.Topics.MotorInput import MotorInput
 from RSMA.uDTP.Topics.Pose import Pose
 from RSMA.uDTP.Topics.RCChannelsInput import RCChannelsInput
 from RSMA.uDTP.Topics.RobotVelocity import RobotVelocity
+from RSMA.uDTP.Topics.SwarmTelemetry import SwarmTelemetry
 from RSMA.uDTP.Topics.TrajectoryPoint import TrajectoryPoint
 
 TOPIC_TYPES: dict[str, type] = {
@@ -35,6 +36,7 @@ TOPIC_TYPES: dict[str, type] = {
     "Pose": Pose,
     "RCChannelsInput": RCChannelsInput,
     "RobotVelocity": RobotVelocity,
+    "SwarmTelemetry": SwarmTelemetry,
     "TrajectoryPoint": TrajectoryPoint,
 }
 
