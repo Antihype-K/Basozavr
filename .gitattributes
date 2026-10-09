@@ -4,3 +4,4 @@
 # Windows command files need CRLF
 *.bat text eol=crlf
 ЗАПУСК.txt text eol=crlf
+ЗАПУСК_WINDOWS.txt text eol=crlf
