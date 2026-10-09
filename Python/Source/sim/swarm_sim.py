@@ -14,6 +14,7 @@
 поэтому контроллер работает с моделью так же, как с настоящей сценой.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -28,12 +29,13 @@ GRAVITY = 9.81
 
 
 @dataclass
-class DroneParams:  # Quadrocopter.cs
+class DroneParams:  # Quadrocopter.cs; PID — SwarmDeliveryScene.external* (сцена 1 под управлением Python)
     mass: float = 2.5
     max_force: float = 250.0
-    kp: float = 8.0
+    max_integral_force: float = 250.0
+    kp: float = 10.0
     ki: float = 2.0
-    kd: float = 2.0
+    kd: float = 12.0
     linear_damping: float = 0.8
     ground_z: float = 0.1
 
@@ -67,12 +69,21 @@ def drone_step(pos: np.ndarray, vel: np.ndarray, integral: np.ndarray, target: n
     if target is not None:
         err = target - pos
         integral = integral + err * h
+        if d.ki > 0:  # анти-windup: вклад интеграла не больше max_integral_force
+            i_force = integral * d.ki
+            norm = float(np.linalg.norm(i_force))
+            if norm > d.max_integral_force:
+                integral = i_force * (d.max_integral_force / norm) / d.ki
         ctrl = err * d.kp + integral * d.ki - vel * d.kd
         ctrl[2] += d.mass * GRAVITY
-        norm = float(np.linalg.norm(ctrl))
-        if norm > d.max_force:
-            ctrl *= d.max_force / norm
-        force = force + ctrl
+        # Ограничение силы с приоритетом вертикали: горизонталь получает только остаток
+        vertical = float(np.clip(ctrl[2], -d.max_force, d.max_force))
+        horizontal = ctrl[:2]
+        h_limit = math.sqrt(max(0.0, d.max_force**2 - vertical**2))
+        h_norm = float(np.linalg.norm(horizontal))
+        if h_norm > h_limit:
+            horizontal = horizontal * (h_limit / h_norm)
+        force = force + np.array([horizontal[0], horizontal[1], vertical])
 
     vel = (vel + force / d.mass * h) / (1.0 + d.linear_damping * h)
     pos = pos + vel * h
@@ -115,6 +126,9 @@ class SwarmPhysicsSim:
     def around_payload(cls, broker: InMemoryBroker, payload_pos, offsets: dict[int, np.ndarray], **kwargs):
         """Дроны в точках формации на 0.2 м выше груза, как в RSMASwarmEnvironment.BuildSwarmScene()."""
         payload_pos = np.asarray(payload_pos, dtype=float)
+        # Земля — под стартовой точкой груза (в сцене 1 база стоит на рельефе)
+        kwargs.setdefault("payload", PayloadParams(ground_z=float(payload_pos[2])))
+        kwargs.setdefault("drone", DroneParams(ground_z=float(payload_pos[2]) - 0.15))
         positions = {i: np.array([payload_pos[0] + off[0], payload_pos[1] + off[1], payload_pos[2] + 0.2])
                      for i, off in offsets.items()}
         return cls(broker, positions, payload_pos, **kwargs)

@@ -34,13 +34,17 @@ python visualize.py              # дашборд последнего поле�
 ### С Unity: сцена запускается сама
 
 ```bash
-python main.py                   # запустит Unity, откроет сцену SupremeFlat, нажмет Play и выполнит миссию
+python main.py                   # запустит Unity, откроет сцену 1, нажмет Play и выполнит миссию
 ```
 
 Если сцена уже запущена (сервер RSMA отвечает на порту 5555), скрипт просто подключится к ней.
 Иначе он находит редактор Unity версии проекта (`ProjectSettings/ProjectVersion.txt`) в
-Unity Hub, запускает его с проектом, открывает сцену и входит в Play
-(`Assets/Editor/RSMALauncher.cs`), ждет сервер и только потом начинает управлять.
+Unity Hub, запускает его с проектом, открывает сцену 1 (`Assets/1.unity`) с ключом `-python` и входит
+в Play (`Assets/Editor/RSMALauncher.cs`), ждет сервер и только потом начинает управлять.
+С ключом `-python` `SwarmDeliveryScene` не запускает встроенную миссию: дроны держат позицию и ждут
+команд Python, а HUD сцены (`SwarmLiveView`) показывает статус из топика `MissionStatus`.
+Если редактора нет, но сцена собрана (`build.sh` / `build.bat`), запускается
+`Builds/SwarmDelivery/SwarmDelivery.x86_64 -python`.
 Первый запуск на свежем клоне долгий: Unity импортирует ассеты (несколько минут).
 После скрипта Unity остается открытой: следующие скрипты подключаются к ней сразу.
 
@@ -57,7 +61,7 @@ Unity Hub, запускает его с проектом, открывает с�
 | Аргумент `main.py` и скриптов | Назначение |
 |---|---|
 | `--no-launch` | не запускать Unity, только подключиться к уже запущенной сцене |
-| `--scene ПУТЬ` | сцена для автозапуска (по умолчанию `Assets/Scenes/SupremeFlat.unity`) |
+| `--scene ПУТЬ` | сцена для автозапуска (по умолчанию `Assets/1.unity`) |
 | `--unity ПУТЬ` | редактор Unity (иначе `RSMA_UNITY` или Unity Hub) |
 | `--player ПУТЬ` | запустить собранный плеер вместо редактора |
 | `--close-unity` | закрыть запущенную скриптом Unity в конце |
@@ -122,10 +126,11 @@ python -m scene                  # интерактивная консоль (и
 
 | Топик | Тип | Направление | Источник в Unity |
 |---|---|---|---|
-| `PayloadPose` | `Pose` | Unity → Python | `TransformPublisher` на грузе |
+| `PayloadPose` | `Pose` | Unity → Python | `RSMASwarmEnvironment` (сцена 1) |
 | `DronePose_i` | `Pose` | Unity → Python | `Quadrocopter.cs` |
 | `CableForce_i` | `Float32` | Unity → Python | `RSMACable.cs` |
 | `DroneTargetPose_i` | `Pose` | Python → Unity | читает `Quadrocopter.cs` |
+| `MissionStatus` | `MissionStatus` | Python → Unity | HUD `SwarmLiveView` в сцене 1 |
 
 Unity использует левую систему координат (Y — вверх), алгоритмы на Python — правую (Z — вверх).
 Пересчет делают `utils/rsma_helpers.py` (`unity_to_py_v3`, `py_to_unity_v3`).

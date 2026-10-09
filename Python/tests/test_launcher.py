@@ -41,7 +41,8 @@ def test_launch_opens_scene_and_waits_for_server(fake_unity, tmp_path):
         assert server_alive("127.0.0.1", port)
         args = args_file.read_text().splitlines()
         assert args[args.index("-executeMethod") + 1] == "RSMALauncher.PlayScene"
-        assert args[args.index("-rsmaScene") + 1] == "Assets/Scenes/SupremeFlat.unity"
+        assert args[args.index("-rsmaScene") + 1] == "Assets/1.unity"
+        assert "-python" in args  # SwarmDeliveryScene: external (Python) control
         assert args[args.index("-projectPath") + 1] == str(tmp_path)
 
         with Simulation(host="127.0.0.1", port=port) as sim:
@@ -109,3 +110,22 @@ def test_connect_launches_scene(fake_unity, tmp_path, monkeypatch):
         sim.close()
     assert sim.unity.process.poll() is not None
     assert sim.unity.log_path == tmp_path / "Logs" / "rsma_python_launch.log"
+
+
+def test_built_player_is_used_when_no_editor(fake_unity, tmp_path, monkeypatch):
+    exe, args_file = fake_unity
+    monkeypatch.delenv("RSMA_UNITY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    project = tmp_path / "project"
+    player = project / "Builds" / "SwarmDelivery" / "SwarmDelivery.x86_64"
+    player.parent.mkdir(parents=True)
+    player.write_text(exe.read_text())
+    player.chmod(exe.stat().st_mode)
+    port = free_port()
+    unity = launch_unity(port=port, host="127.0.0.1", project=project, timeout=30)
+    try:
+        args = args_file.read_text().splitlines()
+        assert "-python" in args and "-executeMethod" not in args
+        assert server_alive("127.0.0.1", port)
+    finally:
+        unity.stop()

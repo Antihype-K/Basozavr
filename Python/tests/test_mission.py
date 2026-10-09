@@ -117,3 +117,24 @@ def test_mission_pauses_while_telemetry_is_frozen(cfg):
             break
     assert ctrl.fsm.is_finished
     np.testing.assert_allclose(sim.payload_pos[:2], ctrl.fsm.finish_xy, atol=0.1)
+
+
+def test_mission_status_is_published_for_rsma_hud(cfg):
+    """SwarmLiveView in scene 1 shows the MissionStatus topic."""
+    from RSMA.uDTP.Topics import MissionStatus
+
+    ctrl, sim, phase, _ = run_mission(cfg)
+    status = sim.broker.get_obj("MissionStatus", MissionStatus)
+    assert status.phase == SwarmFlightPhase.FINISHED
+    assert status.progress == pytest.approx(1.0, abs=0.02)
+    assert status.distanceToFinish < 0.2
+    # Unity coordinates: Python (x, y, z) -> Unity (x, z, y)
+    assert status.finish.x == pytest.approx(ctrl.fsm.finish_xy[0])
+    assert status.finish.z == pytest.approx(ctrl.fsm.finish_xy[1])
+
+
+def test_altitudes_are_relative_to_start(cfg):
+    """Scene 1 base stands on terrain: cruise/land heights are measured from the payload start."""
+    ctrl, sim, phase, _ = run_mission(cfg, start=(2.0, 3.0, 7.25))
+    assert phase == SwarmFlightPhase.FINISHED
+    assert ctrl.fsm.target_flight_z == pytest.approx(7.25 + cfg.CRUISE_ALTITUDE)

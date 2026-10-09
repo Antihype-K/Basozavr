@@ -63,3 +63,7 @@ __pycache__/
 
 # Standalone tools are real projects, not Unity-generated ones
 !/Tools/**/*.csproj
+
+# Логи полёта Python-контроллера
+Python/logs/
+logs/

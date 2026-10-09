@@ -1,3 +1,6 @@
+using RSMA.NetMQ;
+using RSMA.uDTP;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,13 +18,112 @@ public class RSMASwarmEnvironment : MonoBehaviour
     public float radius = 1.414f;
     public float cableLength = 2.0f;
 
+    [Header("Параметры троса")]
+    public float cableStiffness = 1000.0f; // Н/м
+    public float cableDamping = 35.0f;     // Н·с/м
+    public float cableMaxForce = 250.0f;   // Н
+
+    [Header("Ветер")]
+    [Tooltip("Средняя скорость ветра, м/с (требование: до 8–10 м/с)")]
+    public float windSpeed = 0.0f;
+    [Tooltip("Амплитуда порывов, м/с")]
+    public float gustAmplitude = 0.0f;
+    [Tooltip("Направление ветра (куда дует), горизонтальная плоскость")]
+    public Vector3 windDirection = new Vector3(0, 0, 1);
+    [Tooltip("Cd·S дрона, м²")]
+    public float droneDragArea = 0.1f;
+    [Tooltip("Cd·S груза, м²")]
+    public float payloadDragArea = 0.17f;
+
+    [Header("Проверка отказоустойчивости")]
+    [Tooltip("Номер дрона, который откажет (0 — без отказа)")]
+    public int failDroneId = 0;
+    [Tooltip("Время отказа от старта сцены, с")]
+    public float failTime = 30.0f;
+
+    [Header("Связь с Python")]
+    [Tooltip("Запустить NetMQ-сервер для Python, если на сцене нет ServerApp")]
+    public bool startServer = true;
+    public int serverPort = 5555;
+
+    [Header("Сборка")]
+    // Снять галочку, если сцену собирает внешний сценарий (например SwarmDeliveryScene)
+    public bool buildOnStart = true;
+
     [HideInInspector] public GameObject payloadInstance;
     [HideInInspector] public List<Quadrocopter> droneInstances = new List<Quadrocopter>();
     [HideInInspector] public List<RSMACable> cableInstances = new List<RSMACable>();
 
+    public Vector3 CurrentWind { get; private set; }
+
+    private const float AirDensity = 1.225f;
+    private Rigidbody payloadRb;
+    private Vector3 gustPhase;
+    private RSMA.uDTP.Topics.Pose payloadPose;
+
     void Start()
     {
-        BuildSwarmScene();
+        // Повторный Run игнорируется, поэтому совместимо со сценами, где уже есть ServerApp.
+        // Порт можно переопределить переменной окружения RSMA_PORT (так делает автозапуск из Python).
+        string portFromEnv = Environment.GetEnvironmentVariable("RSMA_PORT");
+        if (int.TryParse(portFromEnv, out int envPort) && envPort > 0 && envPort < 65536) serverPort = envPort;
+        if (startServer) NetMQServer.Run(serverPort);
+
+        if (buildOnStart) BuildSwarmScene();
+    }
+
+    void Update()
+    {
+        // Выполняет команды Python (RestartLevel и т.п.) в главном потоке Unity
+        if (startServer) NetMQServer.Update();
+    }
+
+    void FixedUpdate()
+    {
+        if (payloadRb == null) return;
+
+        // Ветер: средняя скорость + порывы (сумма гармоник со случайными фазами)
+        float t = Time.time;
+        float gust = gustAmplitude * (0.6f * Mathf.Sin(0.9f * t + gustPhase.x)
+                                    + 0.3f * Mathf.Sin(2.3f * t + gustPhase.y)
+                                    + 0.1f * Mathf.Sin(5.1f * t + gustPhase.z));
+        Vector3 direction = new Vector3(windDirection.x, 0.0f, windDirection.z).normalized;
+        CurrentWind = direction * (windSpeed + gust);
+
+        if (windSpeed != 0.0f || gustAmplitude != 0.0f)
+        {
+            foreach (Quadrocopter drone in droneInstances)
+            {
+                Rigidbody rb = drone.GetComponent<Rigidbody>();
+                rb.AddForce(AerodynamicForce(CurrentWind - rb.linearVelocity, droneDragArea), ForceMode.Force);
+            }
+            payloadRb.AddForce(AerodynamicForce(CurrentWind - payloadRb.linearVelocity, payloadDragArea), ForceMode.Force);
+        }
+
+        // Отказ дрона по расписанию
+        if (failDroneId > 0 && failDroneId <= droneInstances.Count && Time.timeSinceLevelLoad >= failTime
+            && !droneInstances[failDroneId - 1].isFailed)
+        {
+            droneInstances[failDroneId - 1].isFailed = true;
+            Debug.LogWarning($"[RSMA Engine] Отказ дрона {failDroneId} на {failTime} с");
+        }
+
+        // Состояние груза для Python: позиция/ориентация и скорость
+        payloadPose.position = payloadRb.position;
+        payloadPose.rotation = payloadRb.rotation;
+        payloadPose.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        DataBroker.Publish("PayloadPose", payloadPose);
+        DataBroker.Publish("PayloadVelocity", new RSMA.uDTP.Topics.Pose
+        {
+            position = payloadRb.linearVelocity,
+            rotation = Quaternion.identity,
+            timestamp = payloadPose.timestamp
+        });
+    }
+
+    private static Vector3 AerodynamicForce(Vector3 relativeAirVelocity, float dragArea)
+    {
+        return 0.5f * AirDensity * dragArea * relativeAirVelocity.magnitude * relativeAirVelocity;
     }
 
     public void BuildSwarmScene()
@@ -39,18 +141,13 @@ public class RSMASwarmEnvironment : MonoBehaviour
             payloadInstance.GetComponent<Renderer>().material.color = Color.red;
         }
 
-        Rigidbody payloadRb = payloadInstance.GetComponent<Rigidbody>();
+        payloadRb = payloadInstance.GetComponent<Rigidbody>();
         if (payloadRb == null) payloadRb = payloadInstance.AddComponent<Rigidbody>();
         payloadRb.mass = payloadMass;
 
         payloadRb.linearDamping = 0.2f;
 
-        // Python-контур управления ждет телеметрию груза в топике PayloadPose
-        // (в Payload.prefab публикатор уже есть, у примитива его нет)
-        if (payloadInstance.GetComponent<TransformPublisher>() == null)
-        {
-            payloadInstance.AddComponent<TransformPublisher>().topicName = "PayloadPose";
-        }
+        gustPhase = new Vector3(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value) * 2.0f * Mathf.PI;
 
         // 2. Генерация дронов по кругу
         float angleStep = 360.0f / numDrones;
@@ -106,10 +203,9 @@ public class RSMASwarmEnvironment : MonoBehaviour
             cableScript.connectedBody = payloadRb;
             cableScript.restLength = cableLength;
 
-            // Реалистичные параметры самописной пружины троса
-            cableScript.stiffness = 1000.0f; // Н/м
-            cableScript.damping = 35.0f;     // Н·с/м
-            cableScript.maxForce = 250.0f;   // Н
+            cableScript.stiffness = cableStiffness;
+            cableScript.damping = cableDamping;
+            cableScript.maxForce = cableMaxForce;
 
             cableScript.InitializeCable();
             cableInstances.Add(cableScript);

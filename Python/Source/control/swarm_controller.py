@@ -16,6 +16,7 @@ from RSMA.Time import get_unix_time_milliseconds
 from RSMA.Types.Quaternion import Quaternion
 from RSMA.uDTP import is_published
 from RSMA.uDTP.Topics.Float32 import Float32
+from RSMA.uDTP.Topics.MissionStatus import MissionStatus
 from RSMA.uDTP.Topics.Pose import Pose
 from utils.logger import CSVLogger, TelemetryLogger
 from utils.rsma_helpers import py_to_unity_v3, unity_to_py_v3
@@ -155,16 +156,18 @@ class SwarmRSMAController:
             self._param("TARGET_OFFSET_X", 15.0),
             self._param("TARGET_OFFSET_Y", 8.0),
         ])
-        flight_z = self._param("CRUISE_ALTITUDE", 3.0)
+        # Высоты в config.py — над стартовой высотой груза (земля под ним)
+        ground_z = float(self.start_pos[2])
+        flight_z = ground_z + self._param("CRUISE_ALTITUDE", 3.0)
 
         self.fsm = FlightStateMachine(
             start_pos=self.start_pos,
             finish_xy=finish_xy,
             target_flight_z=flight_z,
-            target_land_z=self._param("LAND_ALTITUDE", 0.5),
+            target_land_z=ground_z + self._param("LAND_ALTITUDE", 0.25),
             climb_rate=self._param("CLIMB_RATE", 0.6),
             hang_height=self.hang_height,
-            drone_land_z=self._param("DRONE_LAND_ALTITUDE", 0.25),
+            drone_land_z=ground_z + self._param("DRONE_LAND_ALTITUDE", 0.0),
             hover_time=self._param("HOVER_TIME", 2.0),
             lift_tolerance=self._param("LIFT_TOLERANCE", 0.35),
             land_tolerance=self._param("LAND_TOLERANCE", 0.05),
@@ -182,6 +185,7 @@ class SwarmRSMAController:
             self.csv_logger = CSVLogger(num_drones=self.num_drones, log_dir=self._param("LOG_DIR", "logs"))
         self.step_count = 0
         self._sway_active = False
+        self._last_status_phase = None
         self.telemetry_age = 0.0
         self.telemetry_stale = False
         self._last_payload_ts = None
@@ -244,6 +248,11 @@ class SwarmRSMAController:
                 rotation=Quaternion.identity(),
                 timestamp=now_ms,
             )))
+        # Статус миссии для HUD в RSMA (SwarmLiveView): регулярно и при смене фазы
+        every_status = self._param("STATUS_EVERY_STEPS", 5)
+        if every_status and (self.step_count % every_status == 0 or fsm.phase != self._last_status_phase):
+            commands.append(("MissionStatus", self._mission_status(target_center_xy, current_cmd_z, now_ms)))
+            self._last_status_phase = fsm.phase
         self.client.publish_many(commands)
 
         # 5. Натяжение тросов
@@ -272,6 +281,20 @@ class SwarmRSMAController:
             TelemetryLogger.log_status(self.step_count, fsm, payload_pos, avg_tension, self.start_pos)
 
         return fsm.phase
+
+    def _mission_status(self, target_center_xy, current_cmd_z: float, now_ms: int) -> MissionStatus:
+        fsm = self.fsm
+        total = float(np.linalg.norm(fsm.finish_xy - self.start_pos[:2]))
+        left = float(np.linalg.norm(self.payload_pos[:2] - fsm.finish_xy))
+        progress = 1.0 if total < 1e-6 else min(1.0, max(0.0, 1.0 - left / total))
+        return MissionStatus(
+            timestamp=now_ms,
+            phase=fsm.phase,
+            progress=progress,
+            distanceToFinish=left,
+            setpoint=py_to_unity_v3([target_center_xy[0], target_center_xy[1], current_cmd_z]),
+            finish=py_to_unity_v3([fsm.finish_xy[0], fsm.finish_xy[1], fsm.target_flight_z]),
+        )
 
     def _update_telemetry_age(self, payload_msg: Pose | None, dt: float) -> None:
         ts = payload_msg.timestamp if payload_msg is not None else None

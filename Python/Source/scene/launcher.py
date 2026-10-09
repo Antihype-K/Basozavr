@@ -3,8 +3,9 @@
 
 Если сервер RSMA (NetMQ, порт 5555) не отвечает, launch_unity():
 1. находит редактор Unity нужной версии (ProjectSettings/ProjectVersion.txt),
-2. запускает его с проектом, открывает сцену и входит в Play
-   (Assets/Editor/RSMALauncher.cs, метод RSMALauncher.PlayScene),
+2. запускает его с проектом, открывает сцену 1 (Assets/1.unity) и входит в Play
+   (Assets/Editor/RSMALauncher.cs, метод RSMALauncher.PlayScene) с ключом -python:
+   SwarmDeliveryScene не запускает встроенную миссию и ждет команд Python,
 3. ждет, пока сервер в сцене начнет отвечать.
 
 Если сцена уже запущена (сервер отвечает), Unity не трогается.
@@ -27,7 +28,10 @@ from RSMA.Client import RSMAClient
 log = logging.getLogger("scene.launcher")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_SCENE = "Assets/Scenes/SupremeFlat.unity"
+DEFAULT_SCENE = "Assets/1.unity"  # сцена 1: доставка груза роем (SwarmDeliveryScene)
+# Ключ, по которому SwarmDeliveryScene включает внешнее управление: встроенная миссия
+# не запускается, дроны ждут команд Python, HUD показывает MissionStatus
+PYTHON_CONTROL_ARG = "-python"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -129,6 +133,17 @@ def find_unity_editor(version: str | None = None, project: Path | None = None) -
     return installed_editors().get(version) if version else None
 
 
+def find_built_player(project: Path | None = None) -> Path | None:
+    """Собранная игра сцены 1 (build.sh / build.bat / меню RSMA → Build SwarmDelivery)."""
+    project = project if project is not None else PROJECT_ROOT
+    for rel in ("Builds/SwarmDelivery/SwarmDelivery.x86_64", "Builds/SwarmDeliveryWin/SwarmDelivery.exe",
+                "Builds/SwarmDelivery/SwarmDelivery.app/Contents/MacOS/SwarmDelivery"):
+        path = Path(project) / rel
+        if path.exists():
+            return path
+    return None
+
+
 def _log_tail(path: Path | None, lines: int = 15) -> str:
     if path is None or not path.exists():
         return ""
@@ -157,23 +172,29 @@ def launch_unity(scene: str = DEFAULT_SCENE, host: str = "localhost", port: int 
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     if player is not None:
-        cmd = [str(player), "-logFile", str(log_path)]
+        cmd = [str(player), PYTHON_CONTROL_ARG, "-logFile", str(log_path)]
         what = f"плеер {player}"
     else:
         editor = Path(unity) if unity else find_unity_editor(project=project)
+        if (editor is None or not editor.exists()) and unity is None and find_built_player(project) is not None:
+            player = find_built_player(project)
+            log.info("Редактор Unity не найден, запускаю собранную сцену %s", player)
+            return launch_unity(scene=scene, host=host, port=port, player=player, project=project,
+                                timeout=timeout, log_path=log_path)
         if editor is None or not editor.exists():
             version = project_unity_version(project)
             installed = ", ".join(sorted(installed_editors())) or "нет"
             raise UnityLaunchError(
                 f"Не найден редактор Unity {version} (установлены: {installed}).\n"
                 f"Установите {version} через Unity Hub или укажите путь: "
-                f"export RSMA_UNITY=/путь/к/Editor/Unity (или параметр --unity)")
+                f"export RSMA_UNITY=/путь/к/Editor/Unity (или параметр --unity), "
+                f"либо соберите сцену: ./build.sh (Windows: build.bat)")
         if (project / "Temp" / "UnityLockfile").exists():
             log.warning("Похоже, проект уже открыт в Unity. Если запуск не удастся — "
                         "откройте сцену в той Unity и нажмите Play")
         cmd = [str(editor), "-projectPath", str(project),
                "-executeMethod", "RSMALauncher.PlayScene", "-rsmaScene", scene,
-               "-logFile", str(log_path)]
+               PYTHON_CONTROL_ARG, "-logFile", str(log_path)]
         what = f"Unity {editor}"
 
     env = os.environ.copy()

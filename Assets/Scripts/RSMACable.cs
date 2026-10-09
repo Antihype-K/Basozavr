@@ -19,6 +19,9 @@ public class RSMACable : MonoBehaviour
     private RSMA.uDTP.Topics.Float32 cableForce;
     public float currentForce { get; private set; }
 
+    // Отцепка: Python публикует Float32 в топик CableRelease_<id> (value > 0.5)
+    public bool isReleased { get; private set; }
+
     void Start()
     {
         // Скрипт управляет физикой вручную в InitializeCable()
@@ -63,6 +66,16 @@ public class RSMACable : MonoBehaviour
         // До InitializeCable() трос не активен (нет LineRenderer и топика)
         if (mainBody == null || connectedBody == null || lineRenderer == null) return;
 
+        if (!isReleased && DataBroker.GetState<RSMA.uDTP.Topics.Float32>($"CableRelease_{cableId}").value > 0.5f)
+        {
+            Release();
+        }
+        if (isReleased)
+        {
+            PublishForce(0.0f);
+            return;
+        }
+
         // 1. Отрисовка троса между центрами масс дрона и груза
         lineRenderer.SetPosition(0, mainBody.position);
         lineRenderer.SetPosition(1, connectedBody.position);
@@ -104,7 +117,20 @@ public class RSMACable : MonoBehaviour
         }
 
         // 5. Публикация силы в RSMA Broker для Python
-        cableForce.value = currentForce;
+        PublishForce(currentForce);
+    }
+
+    public void Release()
+    {
+        isReleased = true;
+        currentForce = 0.0f;
+        lineRenderer.enabled = false;
+        Debug.Log($"[RSMACable_{cableId}] Трос отцеплен");
+    }
+
+    private void PublishForce(float value)
+    {
+        cableForce.value = value;
         cableForce.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         DataBroker.Publish($"CableForce_{cableId}", cableForce);

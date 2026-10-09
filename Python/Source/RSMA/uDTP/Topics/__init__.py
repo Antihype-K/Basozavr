@@ -11,6 +11,7 @@ from RSMA.uDTP.Topics.HILSensor import HILSensor
 from RSMA.uDTP.Topics.HILStateQuaternion import HILStateQuaternion
 from RSMA.uDTP.Topics.LaserScan128 import LaserScan128
 from RSMA.uDTP.Topics.LaserScan256 import LaserScan256
+from RSMA.uDTP.Topics.MissionStatus import MissionStatus
 from RSMA.uDTP.Topics.MotorInput import MotorInput
 from RSMA.uDTP.Topics.Pose import Pose
 from RSMA.uDTP.Topics.RCChannelsInput import RCChannelsInput
@@ -29,6 +30,7 @@ TOPIC_TYPES: dict[str, type] = {
     "HILStateQuaternion": HILStateQuaternion,
     "LaserScan128": LaserScan128,
     "LaserScan256": LaserScan256,
+    "MissionStatus": MissionStatus,
     "MotorInput": MotorInput,
     "Pose": Pose,
     "RCChannelsInput": RCChannelsInput,

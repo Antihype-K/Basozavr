@@ -6,14 +6,15 @@ using UnityEngine;
 /// <summary>
 /// Запуск сцены из командной строки (используется Python: scene.launcher.launch_unity):
 ///
-///   Unity -projectPath &lt;проект&gt; -executeMethod RSMALauncher.PlayScene -rsmaScene Assets/Scenes/SupremeFlat.unity
+///   Unity -projectPath &lt;проект&gt; -executeMethod RSMALauncher.PlayScene -rsmaScene Assets/1.unity -python
 ///
-/// Открывает сцену и входит в Play. Порт сервера RSMA передается переменной окружения
-/// RSMA_PORT (читает ServerApp).
+/// Открывает сцену и входит в Play. Ключ -python включает у SwarmDeliveryScene управление
+/// из Python (встроенная миссия не запускается). Порт сервера RSMA передается переменной окружения
+/// RSMA_PORT (читают RSMASwarmEnvironment и ServerApp).
 /// </summary>
 public static class RSMALauncher
 {
-    public const string DefaultScene = "Assets/Scenes/SupremeFlat.unity";
+    public const string DefaultScene = "Assets/1.unity";
 
     public static void PlayScene()
     {

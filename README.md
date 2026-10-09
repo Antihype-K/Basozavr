@@ -15,8 +15,9 @@
 ## Быстрый старт
 
 Нужны **Unity 6000.3.16f1** (через Unity Hub) и **Python 3.10+**. Сцену вручную открывать не нужно:
-`main.py` и скрипты сами запускают Unity, открывают `Assets/Scenes/SupremeFlat.unity` и нажимают Play
-(если сцена уже запущена — просто подключаются).
+`main.py` и скрипты сами запускают Unity, открывают рабочую **сцену 1** (`Assets/1.unity`) в режиме
+управления из Python и нажимают Play (если сцена уже запущена — просто подключаются).
+Без Python сцена 1 выполняет встроенную миссию: откройте `Assets/1.unity` и нажмите Play (см. `docs/ONBOARDING.md`).
 
 ```bash
 cd Python
@@ -32,7 +33,7 @@ python main.py          # запустит сцену и выполнит мис
 ### Свои скрипты управления
 
 Роем и грузом можно управлять короткими Python-скриптами. Скрипт сам запустит Unity,
-откроет сцену SupremeFlat и нажмет Play, если сцена еще не запущена:
+откроет сцену 1 и нажмет Play, если сцена еще не запущена:
 
 ```python
 from scene import connect
@@ -54,7 +55,10 @@ with connect() as sim:
 | Путь | Что там |
 |---|---|
 | `Assets/Scripts/` | компоненты RSMA: механика, двигатели, датчики, микроконтроллеры, дроны, uDTP, приложения (NetMQ-сервер, планировщик миссий, менеджер объектов) |
-| `Assets/Scenes/` | сцены: `SupremeFlat`, `SuspensionStand` (стенд подвески), `TestScenes/` |
+| `Assets/1.unity` | **рабочая сцена 1**: доставка груза роем (`SwarmDeliveryScene`, HUD `SwarmLiveView`) |
+| `Assets/Scenes/` | прочие сцены: `SupremeFlat` (старая), `SuspensionStand` (стенд подвески), `TestScenes/` |
+| `docs/` | онбординг, тест-гайд, аналитика, обзор Python-контроллера |
+| `Tools/SwarmModel`, `Tools/SwarmCheck`, `Tools/SwarmControl` | численная модель роя, проверки связи и миссии |
 | `Assets/Prefabs/` | префабы роботов, дронов, груза, колес |
 | `Python/` | контур управления роем, API `scene` и примеры скриптов (`Python/Scripts`), клиент RSMA API (тесты: `pytest`) |
 | `Tools/NetMQHost/` | запуск C#-кода NetMQ-сервера вне Unity для проверки совместимости с Python-клиентом |

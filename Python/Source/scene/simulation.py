@@ -179,7 +179,7 @@ def connect(argv: list[str] | None = None, description: str | None = None) -> Si
     Simulation по аргументам командной строки скрипта.
 
     По умолчанию, если сцена не отвечает, запускает Unity с проектом, открывает
-    сцену SupremeFlat и нажимает Play. --offline — встроенная модель без Unity,
+    сцену 1 (Assets/1.unity) в режиме управления из Python и нажимает Play. --offline — встроенная модель без Unity,
     --no-launch — только подключиться к уже запущенной сцене.
     """
     parser = argparse.ArgumentParser(description=description)

@@ -191,17 +191,23 @@ class Swarm:
         p = self.payload_target or self.payload_position
         return self.move_payload_to(p.x, self.ground_y + height, p.z, **kwargs)
 
-    def lower(self, **kwargs) -> bool:
-        """Опускает груз на землю под текущей точкой."""
+    def lower(self, settle_time: float = 1.0, **kwargs) -> bool:
+        """Опускает груз на землю под текущей точкой и дает ему успокоиться settle_time с."""
         p = self.payload_target or self.payload_position
         kwargs.setdefault("tolerance", 0.3)
-        return self.move_payload_to(p.x, self.ground_y, p.z, **kwargs)
+        ok = self.move_payload_to(p.x, self.ground_y, p.z, **kwargs)
+        self.sim.sleep(settle_time)
+        return ok
 
     def land(self, ground_y: float | None = None, timeout: float | None = 60.0) -> bool:
-        """Сажает дронов вокруг груза (трос провисает)."""
+        """
+        Сажает дронов в точки формации вокруг груза (тросы провисают).
+        Дроны снижаются строго по вертикали над своими местами в строю, чтобы не тянуть груз.
+        """
         y = self.ground_y if ground_y is None else ground_y
+        center = self.payload_target or self.payload_position
         for d in self.drones:
-            pos = d.position or d.target
-            d.set_target(pos.x, y, pos.z)
+            ox, oz = self.offsets[d.id]
+            d.set_target(center.x + ox, y, center.z + oz)
         return self.sim.wait_until(lambda: all((d.distance_to_target() or math.inf) <= 0.3 for d in self.drones),
                                    timeout)
